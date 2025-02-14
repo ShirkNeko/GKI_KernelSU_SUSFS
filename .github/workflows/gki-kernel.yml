@@ -165,7 +165,7 @@ jobs:
           if [[ "${{ inputs.kernelsu_branch }}" == "Stable" ]]; then
             echo "BRANCH=-" >> $GITHUB_ENV
           elif [[ "${{ inputs.kernelsu_branch }}" == "Dev" ]]; then
-            echo "BRANCH=-s main" >> $GITHUB_ENV
+            echo "BRANCH=-s susfs" >> $GITHUB_ENV
           elif [[ "${{ inputs.kernelsu_branch }}" == "Other" && -n "${{ inputs.kernelsu_branch_other }}" ]]; then
             echo "BRANCH=-s ${{ inputs.kernelsu_branch_other }}" >> $GITHUB_ENV
           else
@@ -212,7 +212,7 @@ jobs:
           cd "$CONFIG"
 
           echo "Adding KernelSU..."
-          curl -LSs "https://raw.githubusercontent.com/5ec1cff/KernelSU/main/kernel/setup.sh" | bash $BRANCH
+          curl -LSs "https://raw.githubusercontent.com/ShirkNeko/KernelSU/susfs/kernel/setup.sh" | bash $BRANCH
 
           # Revert commit of remove pts_unix98_lookup_pre
           cd KernelSU
