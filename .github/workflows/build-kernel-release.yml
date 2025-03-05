@@ -50,7 +50,7 @@ on:
           - Official
           - Next
           - MKSU
-        default: Next
+        default: MKSU
       kernelsu_branch:
         description: "Choose ksu branch"
         required: true
@@ -59,7 +59,7 @@ on:
           - Stable
           - Dev
           - Other
-        default: Stable
+        default: Dev
       kernelsu_branch_other:
         description: "If 'Other' is selected, specify your custom branch"
         required: false
@@ -172,7 +172,7 @@ jobs:
         run: |
           # Determine the branch based on user input
           if [[ "${{ inputs.kernelsu_variant }}" == "Official" || "${{ inputs.kernelsu_variant }}" == "MKSU" ]]; then
-            BRANCH="main"
+            BRANCH="susfs_patch"
           elif [[ "${{ inputs.kernelsu_variant }}" == "Next" ]]; then
             BRANCH="next"
           elif [[ "${{ inputs.kernelsu_branch }}" == "Other" && -n "${{ inputs.kernelsu_branch_other }}" ]]; then
@@ -197,8 +197,8 @@ jobs:
             REPO_URL2="KernelSU-Next/KernelSU-Next"
           elif [ "${{ inputs.kernelsu_variant }}" == "MKSU" ]; then
             echo "This is the MKSU variant"
-            REPO_URL="https://github.com/5ec1cff/KernelSU.git"
-            REPO_URL2="5ec1cff/KernelSU"
+            REPO_URL="https://github.com/ShirkNeko/KernelSU.git"
+            REPO_URL2="ShirkNeko/KernelSU"
           else
             echo "Unknown variant"
           fi
