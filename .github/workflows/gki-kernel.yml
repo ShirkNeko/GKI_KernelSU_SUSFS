@@ -267,10 +267,10 @@ jobs:
             echo "Applying hooks for KernelSU-Next..."
             cp ../../kernel_patches/next/next_hooks.patch ./
             patch -p1 -F 3 < next_hooks.patch
-          #elif [ "${{ inputs.kernelsu_variant }}" == "MKSU" ]; then
-          #  echo "Applying hooks for MKSU..."
-          #  cp ../../kernel_patches/hooks/ksu_hooks.patch ./
-          #  patch -p1 -F 3 < ksu_hooks.patch
+            elif [ "${{ inputs.kernelsu_variant }}" == "MKSU" ]; then
+            echo "Applying hooks for MKSU..."
+            cp ../../kernel_patches/hooks/ksu_hooks.patch ./
+            patch -p1 -F 3 < ksu_hooks.patch
           fi
           
       - name: Apply Hide Stuff Patches
@@ -313,6 +313,8 @@ jobs:
           echo "CONFIG_KSU_SUSFS_OPEN_REDIRECT=y" >> ./common/arch/arm64/configs/gki_defconfig
 
           if [ "${{ inputs.kernelsu_variant }}" == "Next" ]; then
+            echo "CONFIG_KSU_SUSFS_SUS_SU=n" >> ./common/arch/arm64/configs/gki_defconfig
+          elif [ "${{ inputs.kernelsu_variant }}" == "MKSU" ]; then
             echo "CONFIG_KSU_SUSFS_SUS_SU=n" >> ./common/arch/arm64/configs/gki_defconfig
           else
             echo "CONFIG_KSU_SUSFS_SUS_SU=y" >> ./common/arch/arm64/configs/gki_defconfig
