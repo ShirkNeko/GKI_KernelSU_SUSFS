@@ -248,7 +248,7 @@ jobs:
             cp ../../kernel_patches/next/0001-kernel-patch-susfs-v1.5.5-to-KernelSU-Next-v1.0.5.patch ./
             patch -p1 --forward < 0001-kernel-patch-susfs-v1.5.5-to-KernelSU-Next-v1.0.5.patch || true
           elif [ "${{ inputs.kernelsu_variant }}" == "MKSU" ]; then
-            echo "Applying SUSFS patches for MKSU..."
+    
              
             
 
