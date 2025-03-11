@@ -3,13 +3,13 @@ permissions:
   contents: write  # Allow writing to repository contents (for pushing tags)
   actions: write   # Allows triggering actions
 
-on:
+于:
   workflow_call: # This allows this workflow to be called from another workflow
     inputs:
       make_release:
         required: true
         type: boolean
-        default: true
+        默认: true
       android_version:
         required: true
         type: string
@@ -307,16 +307,16 @@ jobs:
 
           # Remove check_defconfig
           sed -i 's/check_defconfig//' ./common/build.config.gki
-       
-      - name: Config Kernel Name
-        run: |
+          sed -i '$s|echo "\$res"|echo "\android13-1043088111-依-904300"|' ./common/scripts/setlocalversion
+          - name: Config Kernel Name
+          run: |
           echo "Changing to configuration directory: $CONFIG..."
           cd "$CONFIG"
 
           sed -i '$s|echo "\$res"|echo "\$res-ab114514"|' ./common/scripts/setlocalversion
 
           # Run perl command to modify UTS_VERSION
-          perl -pi -e 's{UTS_VERSION="\$\(echo \$UTS_VERSION \$CONFIG_FLAGS \$TIMESTAMP \| cut -b -\$UTS_LEN\)"}{UTS_VERSION="#1 SMP PREEMPT Sat Apr 20 04:20:00 UTC 2024"}' ./common/scripts/mkcompile_h
+          perl -pi -e 's{UTS_VERSION="\$\(echo \$UTS_VERSION \$CONFIG_FLAGS \$TIMESTAMP \| cut -b -\$UTS_LEN\)"}{UTS_VERSION="#1 SMP PREEMPT 4月20日，周六04:20:00 UTC 2024"}' ./common/scripts/mkcompile_h
 
           echo "Building the kernel..."
           if [ -f "build/build.sh" ]; then
