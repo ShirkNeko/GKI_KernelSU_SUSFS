@@ -267,6 +267,9 @@ jobs:
           repository: WildPlusKernel/GKI_KernelSU_SUSFS-dev
           path: ${{ env.PATCH_REPO_PATH }}
           ref: main
+      - name: Fix File Permissions
+        run: |
+          chmod -R +x "$GITHUB_WORKSPACE/susfs-patch-repo"
       - name: Extract AK3 Artifacts
         run: |
           mkdir -p extracted-artifacts
@@ -274,14 +277,22 @@ jobs:
       - name: Apply Binary Patch
         run: |
           cd extracted-artifacts
-          chmod +x ${{ env.PATCH_REPO_PATH }}/.github/workflows/ak3_image_patcher.sh
+          PATCH_TOOL="$GITHUB_WORKSPACE/susfs-patch-repo/.github/workflows/your_patch_tool"
+          echo "Using patch tool: $PATCH_TOOL"
+          if [ ! -x "$PATCH_TOOL" ]; then
+            echo "Error: Patch tool not found or not executable" >&2
+            exit 1
+          fi
+          # 处理所有Image文件
           for img in $(find . -name "Image*" -type f); do
+              echo "Patching $img..."
               base=$(basename $img)
-              ${{ env.PATCH_REPO_PATH }}/.github/workflows/ak3_image_patcher.sh "$img" "${img%.img}.patched.img"
+              "$PATCH_TOOL" "$img" "${img%.img}.patched.img"
           done
       - name: Rebuild Patched AK3
         run: |
           cd extracted-artifacts
+          # 重新打包所有修改后的镜像
           for img in $(find . -name "*.patched.img"); do
               base=$(basename $img .patched.img)
               zip -rq "../patched_${base}_AnyKernel3.zip" ./*
