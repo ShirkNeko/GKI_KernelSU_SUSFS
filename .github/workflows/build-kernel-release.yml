@@ -1,5 +1,4 @@
 name: Build and Release GKI Kernels
-
 permissions:
   contents: write  # Allow writing to repository contents (for pushing tags)
   actions: write   # Allows triggering actions
@@ -63,7 +62,6 @@ on:
         required: false
         type: string  # This input is required if 'Other' is chosen
         default: ""  # Default is empty, but can be filled in if 'Other' is selected
-
 jobs:
   build-kernel-a12-5-10:
     if: ${{ inputs.build_a12_510 }}
@@ -74,7 +72,6 @@ jobs:
       kernelsu_variant: ${{ inputs.kernelsu_variant }}
       kernelsu_branch: ${{ inputs.kernelsu_branch }}
       kernelsu_branch_other: ${{ inputs.kernelsu_branch_other }}
-
   build-kernel-a13-5-10:
     if: ${{ inputs.build_a13_510 }}
     uses: ./.github/workflows/kernel-a13-5.10.yml
@@ -84,7 +81,6 @@ jobs:
       kernelsu_variant: ${{ inputs.kernelsu_variant }}
       kernelsu_branch: ${{ inputs.kernelsu_branch }}
       kernelsu_branch_other: ${{ inputs.kernelsu_branch_other }}
-
   build-kernel-a13-5-15:
     if: ${{ inputs.build_a13_515 }}
     uses: ./.github/workflows/kernel-a13-5.15.yml
@@ -94,7 +90,6 @@ jobs:
       kernelsu_variant: ${{ inputs.kernelsu_variant }}
       kernelsu_branch: ${{ inputs.kernelsu_branch }}
       kernelsu_branch_other: ${{ inputs.kernelsu_branch_other }}
-
   build-kernel-a14-5-15:
     if: ${{ inputs.build_a14_515 }}
     uses: ./.github/workflows/kernel-a14-5.15.yml
@@ -104,7 +99,6 @@ jobs:
       kernelsu_variant: ${{ inputs.kernelsu_variant }}
       kernelsu_branch: ${{ inputs.kernelsu_branch }}
       kernelsu_branch_other: ${{ inputs.kernelsu_branch_other }}
-
   build-kernel-a14-6-1:
     if: ${{ inputs.build_a14_61 }}
     uses: ./.github/workflows/kernel-a14-6.1.yml
@@ -114,7 +108,6 @@ jobs:
       kernelsu_variant: ${{ inputs.kernelsu_variant }}
       kernelsu_branch: ${{ inputs.kernelsu_branch }}
       kernelsu_branch_other: ${{ inputs.kernelsu_branch_other }}
-
   build-kernel-a15-6-6:
     if: ${{ inputs.build_a15_66 }}
     uses: ./.github/workflows/kernel-a15-6.6.yml
@@ -124,7 +117,6 @@ jobs:
       kernelsu_variant: ${{ inputs.kernelsu_variant }}
       kernelsu_branch: ${{ inputs.kernelsu_branch }}
       kernelsu_branch_other: ${{ inputs.kernelsu_branch_other }}
-
   trigger-release:
     runs-on: ubuntu-latest
     needs:
@@ -145,29 +137,25 @@ jobs:
         
         Features:
         -> KernelSU-${{ inputs.kernelsu_variant }}-${{ inputs.kernelsu_branch }}
-        -> SUSFS ඞ v1.5.5 
+        -> SUSFS ��� v1.5.5 
         -> Manual Hooks for Better Hiding
         -> Wireguard Support
         -> Simple Maphide for LineageOS Detections
         -> Futile Maphide for jit-zygote-cache Detections
         -> Magic Mount Support
-
         Notes:
         -> SUS SU Mode 2 will show as disabled or not compatble due to non-kprobe hooks and is not needed anymore!
         -> Kernel Flasher is broken with latest susfs, try https://github.com/libxzr/HorizonKernelFlasher!
-
         Module: 
         -> https://github.com/sidex15/ksu_module_susfs
-        
+      PATCH_REPO_PATH: ./susfs-patch-repo
+
     steps:
-      # Checkout the code
       - name: Checkout code
         uses: actions/checkout@v3
-
       - name: Determine the branch for KernelSU-${{ inputs.kernelsu_variant }}
         if: ${{ inputs.kernelsu_branch == 'Dev' || inputs.kernelsu_variant == 'SukiSU' }}
         run: |
-          # Determine the branch based on user input
           if [[ "${{ inputs.kernelsu_variant }}" == "SukiSU" ]]; then
             BRANCH="main"
           elif [[ "${{ inputs.kernelsu_branch }}" == "Other" && -n "${{ inputs.kernelsu_branch_other }}" ]]; then
@@ -176,22 +164,17 @@ jobs:
             echo "Error: Custom branch not provided for 'Other'" >&2
             exit 1
           fi
-
-          # Store the selected branch in GITHUB_ENV
           echo "KSU_BRANCH=$BRANCH" >> $GITHUB_ENV
-
       - name: Get commit hash or tag and generate URL for KernelSU-${{ inputs.kernelsu_variant }}
         run: |
           if [ "${{ inputs.kernelsu_variant }}" == "SukiSU" ]; then
-            echo "This is the SukiSU variant"
             REPO_URL="https://github.com/ShirkNeko/KernelSU.git"
             REPO_URL2="ShirkNeko/KernelSU"
           else
             echo "Unknown variant"
+            exit 1
           fi
-          
-          if [[ "${{ inputs.kernelsu_branch }}" == "Stable" && "${{ inputs.kernelsu_variant }}" != "SukiSU" ]]; then
-            # Fetch the latest tag
+          if [[ "${{ inputs.kernelsu_branch }}" == "Stable" ]]; then
             TAG=$(git ls-remote --tags --sort=-v:refname $REPO_URL | grep -o 'refs/tags/.*' | cut -d'/' -f3 | head -n1)
             if [[ -z "$TAG" ]]; then
               echo "Error: Could not fetch latest tag for Stable" >&2
@@ -199,9 +182,7 @@ jobs:
             fi
             KSU_REF=$TAG
             KSU_URL="https://github.com/$REPO_URL2/releases/tag/$TAG"
-
           elif [[ "${{ inputs.kernelsu_branch }}" == "Dev" || "${{ inputs.kernelsu_variant }}" == "SukiSU" ]]; then
-            # Fetch the latest commit from "next" branch
             COMMIT_HASH=$(git ls-remote $REPO_URL refs/heads/$KSU_BRANCH | awk '{ print $1 }')
             if [[ -z "$COMMIT_HASH" ]]; then
               echo "Error: Could not fetch latest commit for Dev" >&2
@@ -209,9 +190,7 @@ jobs:
             fi
             KSU_REF=$COMMIT_HASH
             KSU_URL="https://github.com/$REPO_URL2/commit/$COMMIT_HASH"
-
           else
-            # Fetch the specific tag
             TAG=${{ inputs.kernelsu_branch_other }}
             if git ls-remote --tags $REPO_URL | grep -q "refs/tags/$TAG"; then
               KSU_REF=$TAG
@@ -221,18 +200,14 @@ jobs:
               exit 1
             fi
           fi
-
-          # Echo the values to GitHub environment for later use
           echo "KSU_REF=$KSU_REF" >> $GITHUB_ENV
           echo "KSU_URL=$KSU_URL" >> $GITHUB_ENV
           echo "KernelSU Reference: $KSU_REF"
           echo "KernelSU URL: $KSU_URL"
-
       - name: Get commit hashes and generate commit URLs
         run: |
           GITLAB_OWNER="simonpunk"
           GITLAB_REPO="susfs4ksu"
-
           declare -A BRANCH_MAP=(
             ["gki_android12_5_10"]="gki-android12-5.10"
             ["gki_android13_5_10"]="gki-android13-5.10"
@@ -240,35 +215,17 @@ jobs:
             ["gki_android14_5_15"]="gki-android14-5.15"
             ["gki_android14_6_1"]="gki-android14-6.1"
           )
-
           for var_name in "${!BRANCH_MAP[@]}"; do
             branch_name="${BRANCH_MAP[$var_name]}"
             COMMIT_HASH=$(git ls-remote https://gitlab.com/$GITLAB_OWNER/$GITLAB_REPO.git refs/heads/$branch_name | awk '{ print $1 }')
-
             if [[ -n "$COMMIT_HASH" ]]; then
               COMMIT_URL="https://gitlab.com/$GITLAB_OWNER/$GITLAB_REPO/-/commit/$COMMIT_HASH"
               echo "$branch_name Commit: $COMMIT_HASH"
               echo "$branch_name Commit URL: $COMMIT_URL"
-
-              # Store commit hash and commit URL in GitHub environment
               echo "COMMIT_HASH_${var_name}=$COMMIT_HASH" >> "$GITHUB_ENV"
               echo "COMMIT_URL_${var_name}=$COMMIT_URL" >> "$GITHUB_ENV"
             fi
           done
-
-      - name: Append Commit Hashes & Links to `RELEASE_NOTES` & Append KernelSU-Next Reference to `RELEASE_NOTES`
-        run: |
-          if [ "${{ inputs.kernelsu_variant }}" == "SukiSU" ]; then
-            echo "This is the SukiSU variant"
-            echo "RELEASE_NOTES<<EOF" >> $GITHUB_ENV
-            echo "$RELEASE_NOTES" >> $GITHUB_ENV
-            echo "SukiSU Manager:" >> $GITHUB_ENV
-            echo "-> https://github.com/ShirkNeko/KernelSU" >> $GITHUB_ENV
-            echo "EOF" >> $GITHUB_ENV
-          else
-            echo "Unknown variant"
-          fi
-          
       - name: Append Commit Hashes & Links to `RELEASE_NOTES` & Append KernelSU-Next Reference to `RELEASE_NOTES`
         run: |
           echo "RELEASE_NOTES<<EOF" >> $GITHUB_ENV
@@ -287,37 +244,51 @@ jobs:
           echo "gki-android14-6.1: [$COMMIT_HASH_gki_android14_6_1]($COMMIT_URL_gki_android14_6_1)" >> $GITHUB_ENV
           echo "" >> $GITHUB_ENV
           echo "EOF" >> $GITHUB_ENV
-          
-      # Get the Latest Tag from GitHub
       - name: Generate and Create New Tag
         env:
           GITHUB_TOKEN: ${{ secrets.MY_PAT_TOKEN }}
         run: |
-            # Fetch the latest tag from GitHub (this is the latest tag based on the GitHub API)
             LATEST_TAG=$(gh api repos/$REPO_OWNER/$REPO_NAME/tags --jq '.[0].name')
             if [ -z "$LATEST_TAG" ]; then
               LATEST_TAG="v1.5.5-r0"
             fi
-            
             NEW_TAG=$(echo "$LATEST_TAG" | awk -F'-r' '{suffix=$2; if (!suffix) suffix=0; suffix++; printf "%s-r%d", $1, suffix}')
-            
-            # Output the new tag to be used
             echo "New tag: $NEW_TAG"
-            
-            # Set the new tag as an environment variable to be used in later steps
             echo "NEW_TAG=${NEW_TAG}" >> $GITHUB_ENV
-            
-            # Create the tag in the repository
             git tag $NEW_TAG
             git push --tags
-
-      # Download Artifacts for A12 (Only if A12 Build is successful or input is true or empty)
       - name: Download Artifacts
         uses: actions/download-artifact@v4
         with:
           path: ./downloaded-artifacts
-          
-      # Create GitHub Release and upload files if make_release is true
+      - name: Checkout Patch Repository
+        uses: actions/checkout@v4
+        with:
+          repository: WildPlusKernel/GKI_KernelSU_SUSFS-dev
+          path: ${{ env.PATCH_REPO_PATH }}
+          ref: main
+      - name: Extract AK3 Artifacts
+        run: |
+          mkdir -p extracted-artifacts
+          find ./downloaded-artifacts -name "AnyKernel3.zip" -exec unzip -q -d extracted-artifacts {} \;
+      - name: Apply Binary Patch
+        run: |
+          cd extracted-artifacts
+          chmod +x ${{ env.PATCH_REPO_PATH }}/.github/workflows/ak3_image_patcher.sh
+          for img in $(find . -name "Image*" -type f); do
+              base=$(basename $img)
+              ${{ env.PATCH_REPO_PATH }}/.github/workflows/ak3_image_patcher.sh "$img" "${img%.img}.patched.img"
+          done
+      - name: Rebuild Patched AK3
+        run: |
+          cd extracted-artifacts
+          for img in $(find . -name "*.patched.img"); do
+              base=$(basename $img .patched.img)
+              zip -rq "../patched_${base}_AnyKernel3.zip" ./*
+          done
+      - name: Replace Artifacts with Patched Versions
+        run: |
+          mv extracted-artifacts/patched_* ./downloaded-artifacts/kernel-*/
       - name: Create GitHub Release
         uses: actions/create-release@v1
         with:
@@ -325,22 +296,15 @@ jobs:
           prerelease: true  # Mark the release as a pre-release
           release_name: ${{ env.RELEASE_NAME }}  # Pass the RELEASE_NAME to the action
           body: ${{ env.RELEASE_NOTES }}  # Pass the RELEASE_NOTES to the action
-
       - name: Upload Release Assets Dynamically
         run: |
-          # Loop through all files in the downloaded-artifacts directory
           for file in ./downloaded-artifacts/kernel-*/*; do
-              # Skip directories
               if [ -d "$file" ]; then
                   continue
               fi
-
-              # Upload the file to the GitHub release
               echo "Uploading $file..."
               gh release upload ${{ env.NEW_TAG }} "$file"
           done
-
-      # Display Files Uploaded
       - name: Display Files Uploaded
         run: |
           echo "GitHub release created with the following files:"
