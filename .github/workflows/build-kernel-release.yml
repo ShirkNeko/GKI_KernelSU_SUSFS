@@ -158,7 +158,7 @@ jobs:
 
         Module: 
         -> https://github.com/sidex15/ksu_module_susfs
-        
+        -> https://github.com/ShirkNeko/SukiSU_KernelPatch_patch
     steps:
       # Checkout the code
       - name: Checkout code
