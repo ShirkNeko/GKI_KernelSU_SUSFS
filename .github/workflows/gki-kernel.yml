@@ -357,7 +357,7 @@ jobs:
           echo "Changing to configuration directory: $CONFIG..."
           cd "$CONFIG"
 
-          sed -i '$s|echo "\$res"|echo "\$res-YX-Sakura"|' ./common/scripts/setlocalversion
+          sed -i '$s|echo "\$res"|echo "\$res-ab763723603-FYB"|' ./common/scripts/setlocalversion
           #if [ "${{ inputs.kernel_version }}" != "5.10" ]; then
           #sed -i 'd' ./common/android/gki_aarch64_modules
           #sed -i 'd' ./common/android/gki_system_dlkm_modules
