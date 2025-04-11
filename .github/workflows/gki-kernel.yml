@@ -198,7 +198,7 @@ jobs:
           if [[ "${{ inputs.kernelsu_branch }}" == "Stable" ]]; then
               echo "BRANCH=-" >> $GITHUB_ENV
           elif [[ "${{ inputs.kernelsu_branch }}" == "Dev" && ( "${{ inputs.kernelsu_variant }}" == "SukiSU" ) ]]; then
-              echo "BRANCH=-s susfs-stable" >> $GITHUB_ENV
+              echo "BRANCH=-s susfs-dev" >> $GITHUB_ENV
           elif [[ "${{ inputs.kernelsu_branch }}" == "Other" && -n "${{ inputs.kernelsu_branch_other }}" ]]; then
             echo "BRANCH=-s ${{ inputs.kernelsu_branch_other }}" >> $GITHUB_ENV
           else
@@ -212,7 +212,7 @@ jobs:
           cd "$CONFIG"
           if [ "${{ inputs.kernelsu_variant }}" == "SukiSU" ]; then
             echo "Adding KernelSU SukiSU..."
-            curl -LSs "https://raw.githubusercontent.com/ShirkNeko/SukiSU-Ultra/main/kernel/setup.sh" | bash -s susfs-dev
+            curl -LSs "https://raw.githubusercontent.com/ShirkNeko/SukiSU-Ultra/main/kernel/setup.sh" | bash $BRANCH
           fi
           
       - name: Apply SUSFS Patches for KernelSU Variants
@@ -284,6 +284,7 @@ jobs:
 
           # Add KSU configuration settings
           echo "CONFIG_KSU=y" >> ./common/arch/arm64/configs/gki_defconfig
+          echo "CONFIG_KPM=y" >> ./common/arch/arm64/configs/gki_defconfig
 
           echo "CONFIG_KSU_SUSFS_SUS_SU=n" >> ./common/arch/arm64/configs/gki_defconfig
           echo "CONFIG_KSU_MANUAL_HOOK=y" >> ./common/arch/arm64/configs/gki_defconfig
@@ -304,7 +305,6 @@ jobs:
           echo "CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y" >> ./common/arch/arm64/configs/gki_defconfig
           echo "CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y" >> ./common/arch/arm64/configs/gki_defconfig
           echo "CONFIG_KSU_SUSFS_OPEN_REDIRECT=y" >> ./common/arch/arm64/configs/gki_defconfig
-          echo "CONFIG_KPM=y" >> ./common/arch/arm64/configs/gki_defconfig
 
           #if ! grep -q '^CONFIG_ZRAM=m' ./common/arch/arm64/configs/gki_defconfig; then
           #echo "CONFIG_ZRAM=y" >> ./common/arch/arm64/configs/gki_defconfig
@@ -358,6 +358,7 @@ jobs:
           cd "$CONFIG"
 
           sed -i '$s|echo "\$res"|echo "\$res-ab763723603-FYB"|' ./common/scripts/setlocalversion
+
           #if [ "${{ inputs.kernel_version }}" != "5.10" ]; then
           #sed -i 'd' ./common/android/gki_aarch64_modules
           #sed -i 'd' ./common/android/gki_system_dlkm_modules
@@ -409,6 +410,17 @@ jobs:
               tools/bazel build --disk_cache=/home/runner/.cache/bazel --config=fast --lto=thin //common:kernel_aarch64_dist || exit 1
             fi
             ccache --show-stats
+
+      #- name: Patch Image File
+      #  run: |
+      #    echo "Patching Image file..."
+      #    cd "$CONFIG/out/${{ inputs.android_version }}-${{ inputs.kernel_version }}/dist"
+          
+      #    curl -LSs "https://raw.githubusercontent.com/ShirkNeko/SukiSU_patch/refs/heads/main/kpm/patch_linux" -o patch
+      #    chmod 777 patch
+      #    ./patch
+      #    rm -rf Image
+      #    mv oImage Image
             
       - name: Create Bootimgs Folder and Copy Images
         if: ${{ inputs.android_version == 'android12' || inputs.android_version == 'android13' }}
