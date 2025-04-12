@@ -257,16 +257,16 @@ jobs:
             patch -p1 -F 3 < new_hooks.patch
           fi
 
-          #if [ "${{ inputs.kernel_version }}" != "5.10" ]; then
-          #  cp ../../SukiSU_patch/other/lz4k_patch/${{ inputs.kernel_version }}/lz4kd.patch ./
-          #  patch -p1 -F 3 < lz4kd.patch || true
-          #fi
+          if [ "${{ inputs.kernel_version }}" != "5.10" ]; then
+            cp ../../SukiSU_patch/other/lz4k_patch/${{ inputs.kernel_version }}/lz4kd.patch ./
+            patch -p1 -F 3 < lz4kd.patch || true
+          fi
           
-          #if ! grep -q '^CONFIG_ZRAM=m' ./arch/arm64/configs/gki_defconfig; then
-          #  cp -r -f ../../SukiSU_patch/other/lz4k_patch/5.10/drivers/block/zram/* ./drivers/block/zram/
-          #  cp -r -f ../../SukiSU_patch/other/lz4k_patch/5.10/lib/* ./lib/
-          #  cp -r -f ../../SukiSU_patch/other/lz4k_patch/5.10/crypto/* ./crypto/
-          #fi
+          if ! grep -q '^CONFIG_ZRAM=m' ./arch/arm64/configs/gki_defconfig; then
+            cp -r -f ../../SukiSU_patch/other/lz4k_patch/5.10/drivers/block/zram/* ./drivers/block/zram/
+            cp -r -f ../../SukiSU_patch/other/lz4k_patch/5.10/lib/* ./lib/
+            cp -r -f ../../SukiSU_patch/other/lz4k_patch/5.10/crypto/* ./crypto/
+          fi
       - name: 应用隐藏某特征的补丁
         run: |
           echo "Changing to configuration directory: $CONFIG..."
