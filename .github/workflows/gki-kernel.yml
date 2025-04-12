@@ -44,7 +44,7 @@ jobs:
       CCACHE_HARDLINK: "true"
 
     steps:
-      - name: Maximize build space
+      - name: 最大的使用空间
         uses: easimon/maximize-build-space@master
         with:
           root-reserve-mb: 8192
@@ -55,7 +55,7 @@ jobs:
           remove-haskell: "true"
           remove-codeql: "true"
 
-      - name: Set CONFIG Environment Variable
+      - name: 设置配置环境变量
         run: |
           # Set CONFIG dynamically based on inputs values
           CONFIG="${{ inputs.android_version }}-${{ inputs.kernel_version }}-${{ inputs.sub_level }}"
@@ -66,10 +66,10 @@ jobs:
           echo "CONFIG set to: $CONFIG"
 
       # Install ccache
-      - name: Install ccache
+      - name: 安装 ccache
         run: sudo apt update && sudo apt install -y ccache
 
-      - name: Set up ccache
+      - name: 建立ccache
         run: |
           mkdir -p ~/.cache/bazel # Ensure the directory exists
           ccache --version
@@ -257,16 +257,16 @@ jobs:
             patch -p1 -F 3 < new_hooks.patch
           fi
 
-          if [ "${{ inputs.kernel_version }}" != "5.10" ]; then
-            cp ../../SukiSU_patch/other/lz4k_patch/${{ inputs.kernel_version }}/lz4kd.patch ./
-            patch -p1 -F 3 < lz4kd.patch || true
-          fi
+          #if [ "${{ inputs.kernel_version }}" != "5.10" ]; then
+          #  cp ../../SukiSU_patch/other/lz4k_patch/${{ inputs.kernel_version }}/lz4kd.patch ./
+          #  patch -p1 -F 3 < lz4kd.patch || true
+          #fi
           
-          if ! grep -q '^CONFIG_ZRAM=m' ./arch/arm64/configs/gki_defconfig; then
-            cp -r -f ../../SukiSU_patch/other/lz4k_patch/5.10/drivers/block/zram/* ./drivers/block/zram/
-            cp -r -f ../../SukiSU_patch/other/lz4k_patch/5.10/lib/* ./lib/
-            cp -r -f ../../SukiSU_patch/other/lz4k_patch/5.10/crypto/* ./crypto/
-          fi
+          #if ! grep -q '^CONFIG_ZRAM=m' ./arch/arm64/configs/gki_defconfig; then
+          #  cp -r -f ../../SukiSU_patch/other/lz4k_patch/5.10/drivers/block/zram/* ./drivers/block/zram/
+          #  cp -r -f ../../SukiSU_patch/other/lz4k_patch/5.10/lib/* ./lib/
+          #  cp -r -f ../../SukiSU_patch/other/lz4k_patch/5.10/crypto/* ./crypto/
+          #fi
       - name: 应用隐藏某特征的补丁
         run: |
           echo "Changing to configuration directory: $CONFIG..."
