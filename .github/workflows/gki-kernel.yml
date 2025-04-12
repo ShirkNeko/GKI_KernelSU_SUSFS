@@ -195,11 +195,11 @@ jobs:
 
       - name: 确定 KernelSU 的分支
         run: |
-          if [[ "${{ inputs.kernelsu_branch }}" == "Stable（标准版)" ]]; then
+          if [[ "${{ inputs.kernelsu_branch }}" == "Stable" ]]; then
               echo "BRANCH=-" >> $GITHUB_ENV
-          elif [[ "${{ inputs.kernelsu_branch }}" == "Dev（开发版)" && ( "${{ inputs.kernelsu_variant }}" == "SukiSU" ) ]]; then
+          elif [[ "${{ inputs.kernelsu_branch }}" == "Dev" && ( "${{ inputs.kernelsu_variant }}" == "SukiSU" ) ]]; then
               echo "BRANCH=-s susfs-dev" >> $GITHUB_ENV
-          elif [[ "${{ inputs.kernelsu_branch }}" == "Other（其他/指定)" && -n "${{ inputs.kernelsu_branch_other }}" ]]; then
+          elif [[ "${{ inputs.kernelsu_branch }}" == "Other" && -n "${{ inputs.kernelsu_branch_other }}" ]]; then
             echo "BRANCH=-s ${{ inputs.kernelsu_branch_other }}" >> $GITHUB_ENV
           else
             echo "Error: Custom branch not provided for 'Other'" >&2
