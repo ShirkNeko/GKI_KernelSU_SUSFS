@@ -385,6 +385,13 @@ jobs:
 
           # Remove check_defconfig
           sed -i 's/check_defconfig//' ./common/build.config.gki
+
+       - name: Add sched_ext
+        run: |
+         cd $CONFIG/common/drivers
+         git clone https://github.com/JiuGeFaCai/sched_ext.git
+         rm -rf ./sched_ext/.git
+         printf "\nobj-y                              += sched_ext/\n" >> Makefile
        
       - name: Config Kernel Name
         run: |
