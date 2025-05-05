@@ -142,8 +142,7 @@ jobs:
 
           # Clone repositories using the branch names
           git clone https://github.com/ShirkNeko/susfs4ksu.git -b "$SUSFS_BRANCH"
-          git clone https://github.com/ShirkNeko/SukiSU_patch.git
-          cd SukiSU_patch
+          git clone https://github.com/Herobetrine/AnyKernel3.git 
           cp -r AnyKernel3 ../
           cd ..
 
@@ -268,80 +267,6 @@ jobs:
           # Apply additional patch
           #cp ../../SukiSU_patch/69_hide_stuff.patch ./
           #patch -p1 -F 3 < 69_hide_stuff.patch
-
-      - name: 复制源文件&应用LZ4KD&ZSTDN补丁
-        run: |
-          if [[ "${{ env.ZRAM }}" == "true" ]]; then
-            echo "Changing to configuration directory: $CONFIG..."
-            cd "$CONFIG/common"
-            cp -r ../../SukiSU_patch/other/zram/lz4k/include/linux/* ./include/linux/
-            cp -r ../../SukiSU_patch/other/zram/lz4k/lib/* ./lib/
-            cp -r ../../SukiSU_patch/other/zram/lz4k/crypto/* ./crypto/
-            cp -r ../../SukiSU_patch/other/zram/zstdn ./lib/
-            cp -r ../../SukiSU_patch/other/zram/lz4k_oplus ./lib/
-          
-            cp ../../SukiSU_patch/other/zram/zram_patch/${{ inputs.kernel_version }}/lz4kd.patch ./
-            echo "正在打lz4kd补丁"
-            patch -p1 -F 3 < lz4kd.patch || true
-            echo '完成LZ4KD补丁'
-
-            cp ../../SukiSU_patch/other/zram/zram_patch/${{ inputs.kernel_version }}/zstdn.patch ./
-            echo "正在打zstdn补丁"
-            patch -p1 -F 3 < zstdn.patch || true
-            echo '完成ZSTDN补丁'
-          fi
-
-      - name: LZ4KD&ZSTDN配置
-        run: |
-          if [[ "${{ env.ZRAM }}" == "true" ]]; then
-            echo "写入LZ4KD&ZSTDN config依赖"
-            CONFIG_FILE="$CONFIG/common/arch/arm64/configs/gki_defconfig"
-
-            if [ "${{ inputs.kernel_version }}" = "5.10" ]; then
-              echo "CONFIG_ZSMALLOC=y" >> "$CONFIG_FILE"
-              echo "CONFIG_ZRAM=y" >> "$CONFIG_FILE"
-              echo "CONFIG_MODULE_SIG=n" >> "$CONFIG_FILE"
-              echo "CONFIG_CRYPTO_LZO=y" >> "$CONFIG_FILE"
-              echo "CONFIG_ZRAM_DEF_COMP_LZ4KD=y" >> "$CONFIG_FILE"
-            fi
-
-            if [ "${{ inputs.kernel_version }}" != "6.6" ] && [ "${{ inputs.kernel_version }}" != "5.10" ]; then
-              # sed -i 's/CONFIG_MODULE_SIG=y/CONFIG_MODULE_SIG=n/g' "$CONFIG_FILE"
-              if grep -q "CONFIG_ZSMALLOC" -- "$CONFIG_FILE"; then
-                  echo "提示：文件 $CONFIG_FILE 包含字符串 CONFIG_ZSMALLOC。"
-                  sed -i 's/CONFIG_ZSMALLOC=m/CONFIG_ZSMALLOC=y/g' "$CONFIG_FILE"
-              else
-                  echo "警告：文件 $CONFIG_FILE 不包含字符串 CONFIG_ZSMALLOC。"
-                  echo "CONFIG_ZSMALLOC=y" >> "$CONFIG_FILE"
-              fi
-                
-              sed -i 's/CONFIG_ZRAM=m/CONFIG_ZRAM=y/g' "$CONFIG_FILE"
-            fi
-
-            if [ "${{ inputs.kernel_version }}" = "6.6" ]; then
-              echo "CONFIG_ZSMALLOC=y" >> "$CONFIG_FILE"
-              sed -i 's/CONFIG_ZRAM=m/CONFIG_ZRAM=y/g' "$CONFIG_FILE"
-            fi
-
-            if [ "${{ inputs.android_version }}" = "android14" ] || [ "${{ inputs.android_version }}" = "android15" ]; then
-              sed -i 's/"drivers\/block\/zram\/zram\.ko",//g; s/"mm\/zsmalloc\.ko",//g' "$CONFIG/common/modules.bzl"
-              echo "CONFIG_MODULE_SIG_FORCE=n" >> "$CONFIG_FILE"
-              echo 'Android14_Bazel:已修复zram&zsmalloc'
-            elif [ "${{ inputs.kernel_version }}" = "5.15" ]; then
-              rm "$CONFIG/common/android/gki_aarch64_modules"
-              touch "$CONFIG/common/android/gki_aarch64_modules"
-              echo '5.15:已修复zram&zsmalloc'
-            fi
-
-             if grep -q "CONFIG_ZSMALLOC=y" "$CONFIG_FILE" && grep -q "CONFIG_ZRAM=y" "$CONFIG_FILE"; then
-              echo "CONFIG_CRYPTO_LZ4HC=y" >> "$CONFIG_FILE"
-              echo "CONFIG_CRYPTO_LZ4K=y" >> "$CONFIG_FILE"
-              echo "CONFIG_CRYPTO_LZ4KD=y" >> "$CONFIG_FILE"
-              echo "CONFIG_CRYPTO_842=y" >> "$CONFIG_FILE"
-              echo "CONFIG_CRYPTO_ZSTDN=m" >> "$CONFIG_FILE"
-              echo "CONFIG_CRYPTO_LZ4K_OPLUS=y" >> "$CONFIG_FILE"
-            fi
-          fi
             
       - name: Add SUSFS Configuration Settings
         run: |
@@ -386,10 +311,11 @@ jobs:
           # Remove check_defconfig
           sed -i 's/check_defconfig//' ./common/build.config.gki
 
-       - name: Add sched_ext
+      - name: Add sched_ext
         run: |
+         echo "CONFIG_SCHED_CLASS_EXT=y" >> ./common/arch/arm64/configs/gki_defconfig
          cd $CONFIG/common/drivers
-         git clone https://github.com/JiuGeFaCai/sched_ext.git
+         git clone https://github.com/Herobetrine/sched_ext.git
          rm -rf ./sched_ext/.git
          printf "\nobj-y                              += sched_ext/\n" >> Makefile
        
