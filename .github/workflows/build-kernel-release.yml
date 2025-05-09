@@ -124,7 +124,7 @@ jobs:
       kernelsu_variant: ${{ inputs.kernelsu_variant }}
       kernelsu_branch: ${{ inputs.kernelsu_branch }}
       kernelsu_branch_other: ${{ inputs.kernelsu_branch_other }}
-
+      
   trigger-release:
     runs-on: ubuntu-latest
     permissions:
@@ -142,22 +142,23 @@ jobs:
       REPO_OWNER: ShirkNeko
       REPO_NAME: GKI_KernelSU_SUSFS
       GITHUB_TOKEN: ${{ secrets.MY_GITHUB_TOKEN }}
-      RELEASE_NAME: "*TEST BUILD* GKI Kernels With KernelSU-${{ inputs.kernelsu_variant }} ${{ inputs.kernelsu_branch }} & SUSFS v1.5.5 *TEST BUILD*"
+      RELEASE_NAME: "*TEST BUILD* GKI Kernels With KernelSU-${{ inputs.kernelsu_variant }} ${{ inputs.kernelsu_branch }} & SUSFS v1.5.7 *TEST BUILD*"
       RELEASE_NOTES: |
-        This release contains KernelSU-${{ inputs.kernelsu_variant }} ${{ inputs.kernelsu_branch }} and SUSFS v1.5.5
+        This release contains KernelSU-${{ inputs.kernelsu_variant }} ${{ inputs.kernelsu_branch }} and SUSFS v1.5.7
         
         Features:
         -> KernelSU-${{ inputs.kernelsu_variant }}-${{ inputs.kernelsu_branch }}
-        -> SUSFS ඞ v1.5.5 
-        -> Manual Hooks for Better Hiding
-        -> Wireguard Support
-        -> Simple Maphide for LineageOS Detections
-        -> Futile Maphide for jit-zygote-cache Detections
-        -> Magic Mount Support
+        -> SUSFS ඞ v1.5.7
+        -> Manual Syscall Hooks for Better Hiding (手动Syscall Hooks,实现更好的隐藏效果)
+        -> Wireguard Support (Wireguard 支持)
+        -> Futile Maphide for jit-zygote-cache Detections (徒劳隐藏 jit-zygote-cache 检测)
+        -> Magic Mount Support (Magic Mount 支持) 
+        -> **LZ4KD&&ZSTDN&ONEPLUS_LZ4K** Support (LZ4KD&&ZSTDN&ONEPLUS_LZ4K压缩算法支持)
 
         Notes:
-        -> SUS SU Mode 2 will show as disabled or not compatble due to non-kprobe hooks and is not needed anymore!
-        -> Kernel Flasher is broken with latest susfs, try https://github.com/libxzr/HorizonKernelFlasher!
+        -> SUS SU Mode 2 will show as disabled or not compatble due to non-kprobe hooks and is not needed anymore! (LZ4KD&&ZSTDN&ONEPLUS_LZ4K)
+        -> Kernel Flasher is broken with latest susfs, try https://github.com/libxzr/HorizonKernelFlasher! (在最新版的susfs, 使用Kernel Flasher刷入AK3压缩包会变砖, 尝试 https://github.com/libxzr/HorizonKernelFlasher!)
+        -> Or use the one that comes with SukiSU, Requires root access to display. (或者使用SukiSU自带的刷写AK3,需要root权限才会显示)
 
         Module: 
         -> https://github.com/sidex15/ksu_module_susfs
@@ -348,3 +349,15 @@ jobs:
         run: |
           echo "GitHub release created with the following files:"
           ls ./downloaded-artifacts/**/*
+          
+      - name: Send telegram message on push
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TELEGRAM_MESSAGE_THREAD_ID: ${{ secrets.TELEGRAM_MESSAGE_THREAD_ID }}
+        run: |
+          curl -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendMessage" \
+            -d "chat_id=$TELEGRAM_CHAT_ID" \
+            -d "message_thread_id=$TELEGRAM_MESSAGE_THREAD_ID" \
+            -d "text=Latest release (最新发布): 
+            https://github.com/ShirkNeko/GKI_KernelSU_SUSFS/releases/tag/${{ env.NEW_TAG }}"
