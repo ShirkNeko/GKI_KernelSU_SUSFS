@@ -300,20 +300,25 @@ jobs:
             # Fetch the latest tag from GitHub (this is the latest tag based on the GitHub API)
             LATEST_TAG=$(gh api repos/$REPO_OWNER/$REPO_NAME/tags --jq '.[0].name')
             if [ -z "$LATEST_TAG" ]; then
-              LATEST_TAG="v1.5.5-r0"
+            LATEST_TAG="v1.5.5-r0"
             fi
-            
+    
             NEW_TAG=$(echo "$LATEST_TAG" | awk -F'-r' '{suffix=$2; if (!suffix) suffix=0; suffix++; printf "%s-r%d", $1, suffix}')
-            
+    
             # Output the new tag to be used
             echo "New tag: $NEW_TAG"
-            
+    
             # Set the new tag as an environment variable to be used in later steps
             echo "NEW_TAG=${NEW_TAG}" >> $GITHUB_ENV
-            
-            # Create the tag in the repository
+    
+            # Check if the tag already exists in the remote repository
+            if git ls-remote --tags https://github.com/$REPO_OWNER/$REPO_NAME.git | grep -q "refs/tags/$NEW_TAG"; then
+            echo "Tag $NEW_TAG already exists. Skipping tag push."
+            else
+            # Create the tag and push it only if it doesn't exist
             git tag $NEW_TAG
             git push --tags
+            fi
 
       # Download Artifacts for A12 (Only if A12 Build is successful or input is true or empty)
       - name: Download Artifacts
