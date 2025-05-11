@@ -142,7 +142,7 @@ jobs:
 
           # Clone repositories using the branch names
           git clone https://github.com/ShirkNeko/susfs4ksu.git -b "$SUSFS_BRANCH"
-          git clone https://github.com/ShirkNeko/SukiSU_patch.git
+          git clone https://github.com/Matheusfellipesl/SukiSU_patch.git
           cd SukiSU_patch
           cp -r AnyKernel3 ../
           cd ..
