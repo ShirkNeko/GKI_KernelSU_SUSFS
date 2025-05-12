@@ -295,30 +295,37 @@ jobs:
       # Get the Latest Tag from GitHub
       - name: Generate and Create New Tag
         env:
-          GITHUB_TOKEN: ${{ secrets.MY_GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.MY_GITHUB_TOKEN }}  # Uses the default token (no need for MY_GITHUB_TOKEN)
         run: |
-            # Fetch the latest tag from GitHub (this is the latest tag based on the GitHub API)
-            LATEST_TAG=$(gh api repos/$REPO_OWNER/$REPO_NAME/tags --jq '.[0].name')
-            if [ -z "$LATEST_TAG" ]; then
-            LATEST_TAG="v1.5.5-r0"
-            fi
-    
-            NEW_TAG=$(echo "$LATEST_TAG" | awk -F'-r' '{suffix=$2; if (!suffix) suffix=0; suffix++; printf "%s-r%d", $1, suffix}')
-    
-            # Output the new tag to be used
-            echo "New tag: $NEW_TAG"
-    
-            # Set the new tag as an environment variable to be used in later steps
-            echo "NEW_TAG=${NEW_TAG}" >> $GITHUB_ENV
-    
-            # Check if the tag already exists in the remote repository
-            if git ls-remote --tags https://github.com/$REPO_OWNER/$REPO_NAME.git | grep -q "refs/tags/$NEW_TAG"; then
-            echo "Tag $NEW_TAG already exists. Skipping tag push."
-            else
-            # Create the tag and push it only if it doesn't exist
-            git tag $NEW_TAG
-            git push --tags
-            fi
+          set -e  # Exit immediately if any command fails
+          echo "Fetching latest tag..."
+          LATEST_TAG=$(gh api repos/$REPO_OWNER/$REPO_NAME/tags --jq '.[0].name')
+          if [ -z "$LATEST_TAG" ]; then
+          LATEST_TAG="v1.5.5-r0"  # Fallback if no tags exist
+          fi
+          echo "Latest tag: $LATEST_TAG"
+
+          # Extract version and increment the number
+          if [[ $LATEST_TAG =~ (.*-r)([0-9]+) ]]; then
+          BASE=${BASH_REMATCH[1]}
+          NUM=${BASH_REMATCH[2]}
+          NEW_NUM=$((NUM + 1))
+          NEW_TAG="${BASE}${NEW_NUM}"
+          else
+          # If the format doesn't match, append -r1
+          NEW_TAG="${LATEST_TAG}-r1"
+          fi
+
+          echo "New tag: $NEW_TAG"
+          echo "NEW_TAG=$NEW_TAG" >> $GITHUB_ENV
+
+          # Configure git (required for pushing)
+          git config --global user.name "GitHub Actions"
+          git config --global user.email "actions@github.com"
+
+          # Create and push the new tag
+          git tag $NEW_TAG
+          git push origin $NEW_TAG
 
       # Download Artifacts for A12 (Only if A12 Build is successful or input is true or empty)
       - name: Download Artifacts
