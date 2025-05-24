@@ -1,7 +1,7 @@
 name: GKI Kernel Build
 permissions:
-  contents: write  # Allow writing to repository contents (for pushing tags)
-  actions: write   # Allows triggering actions
+  contents: write # Allow writing to repository contents (for pushing tags)
+  actions: write # Allows triggering actions
 
 on:
   workflow_call: # This allows this workflow to be called from another workflow
@@ -77,7 +77,7 @@ jobs:
           ccache --max-size=2G
           ccache --set-config=compression=true
           echo "CCACHE_DIR=$HOME/.ccache" >> $GITHUB_ENV
-      
+
       - name: Restore ccache from cache
         uses: actions/cache@v4
         with:
@@ -85,7 +85,7 @@ jobs:
           key: ${{ inputs.android_version }}-${{ inputs.kernel_version }}-${{ inputs.sub_level }}-ccache-${{ github.sha }}
           restore-keys: |
             ${{ inputs.android_version }}-${{ inputs.kernel_version }}-${{ inputs.sub_level }}-ccache-
-      
+
       - name: Cache toolchain
         id: cache-toolchain
         uses: actions/cache@v4
@@ -193,7 +193,7 @@ jobs:
             echo "Error: Custom branch not provided for 'Other'" >&2
             exit 1
           fi
-      
+
       - name: Add KernelSU
         run: |
           echo "Changing to configuration directory: $CONFIG..."
@@ -202,14 +202,14 @@ jobs:
             echo "Adding KernelSU SukiSU..."
             curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh" | bash $BRANCH
           fi
-          
+
       - name: Apply SUSFS Patches for KernelSU Variants
         run: |
           echo "Changing to configuration directory: $CONFIG..."
           cd "$CONFIG"
-          
+
           echo "Applying SUSFS patches..."
-          
+
           # Copy SUSFS patches
           cp ../susfs4ksu/kernel_patches/50_add_susfs_in_gki-${{ inputs.android_version }}-${{ inputs.kernel_version }}.patch ./common/
           cp ../susfs4ksu/kernel_patches/fs/* ./common/fs/
@@ -240,7 +240,7 @@ jobs:
             cp ../../SukiSU_patch/hooks/syscall_hooks.patch ./
             patch -p1 -F 3 < syscall_hooks.patch
           fi
-          
+
       - name: Apply Hide Stuff Patches
         run: |
           echo "Changing to configuration directory: $CONFIG..."
@@ -249,79 +249,79 @@ jobs:
           #cp ../../SukiSU_patch/69_hide_stuff.patch ./
           #patch -p1 -F 3 < 69_hide_stuff.patch
 
-      - name: 复制源文件&应用LZ4KD&ZSTDN补丁
-        run: |
-          if [[ "${{ env.ZRAM }}" == "true" ]]; then
-            echo "Changing to configuration directory: $CONFIG..."
-            cd "$CONFIG/common"
-            cp -r ../../SukiSU_patch/other/zram/lz4k/include/linux/* ./include/linux/
-            cp -r ../../SukiSU_patch/other/zram/lz4k/lib/* ./lib/
-            cp -r ../../SukiSU_patch/other/zram/lz4k/crypto/* ./crypto/
-            cp -r ../../SukiSU_patch/other/zram/lz4k_oplus ./lib/
-          
-            cp ../../SukiSU_patch/other/zram/zram_patch/${{ inputs.kernel_version }}/lz4kd.patch ./
-            echo "正在打lz4kd补丁"
-            patch -p1 -F 3 < lz4kd.patch || true
-            echo '完成LZ4KD补丁'
+      # - name: 复制源文件&应用LZ4KD&ZSTDN补丁
+      #   run: |
+      #     if [[ "${{ env.ZRAM }}" == "true" ]]; then
+      #       echo "Changing to configuration directory: $CONFIG..."
+      #       cd "$CONFIG/common"
+      #       cp -r ../../SukiSU_patch/other/zram/lz4k/include/linux/* ./include/linux/
+      #       cp -r ../../SukiSU_patch/other/zram/lz4k/lib/* ./lib/
+      #       cp -r ../../SukiSU_patch/other/zram/lz4k/crypto/* ./crypto/
+      #       cp -r ../../SukiSU_patch/other/zram/lz4k_oplus ./lib/
 
-            cp ../../SukiSU_patch/other/zram/zram_patch/${{ inputs.kernel_version }}/lz4k_oplus.patch ./
-            echo "正在打lz4k_oplus补丁"
-            patch -p1 -F 3 < lz4k_oplus.patch || true
-            echo '完成lz4k_oplus补丁'
-          fi
+      #       cp ../../SukiSU_patch/other/zram/zram_patch/${{ inputs.kernel_version }}/lz4kd.patch ./
+      #       echo "正在打lz4kd补丁"
+      #       patch -p1 -F 3 < lz4kd.patch || true
+      #       echo '完成LZ4KD补丁'
 
-      - name: LZ4KD&Lz4k_oplus配置
-        run: |
-          if [[ "${{ env.ZRAM }}" == "true" ]]; then
-            echo "写入LZ4KD&ZSTDN config依赖"
-            CONFIG_FILE="$CONFIG/common/arch/arm64/configs/gki_defconfig"
+      #       cp ../../SukiSU_patch/other/zram/zram_patch/${{ inputs.kernel_version }}/lz4k_oplus.patch ./
+      #       echo "正在打lz4k_oplus补丁"
+      #       patch -p1 -F 3 < lz4k_oplus.patch || true
+      #       echo '完成lz4k_oplus补丁'
+      #     fi
 
-            if [ "${{ inputs.kernel_version }}" = "5.10" ]; then
-              echo "CONFIG_ZSMALLOC=y" >> "$CONFIG_FILE"
-              echo "CONFIG_ZRAM=y" >> "$CONFIG_FILE"
-              echo "CONFIG_MODULE_SIG=n" >> "$CONFIG_FILE"
-              echo "CONFIG_CRYPTO_LZO=y" >> "$CONFIG_FILE"
-              echo "CONFIG_ZRAM_DEF_COMP_LZ4KD=y" >> "$CONFIG_FILE"
-            fi
+      # - name: LZ4KD&Lz4k_oplus配置
+      #   run: |
+      #     if [[ "${{ env.ZRAM }}" == "true" ]]; then
+      #       echo "写入LZ4KD&ZSTDN config依赖"
+      #       CONFIG_FILE="$CONFIG/common/arch/arm64/configs/gki_defconfig"
 
-            if [ "${{ inputs.kernel_version }}" != "6.6" ] && [ "${{ inputs.kernel_version }}" != "5.10" ]; then
-              # sed -i 's/CONFIG_MODULE_SIG=y/CONFIG_MODULE_SIG=n/g' "$CONFIG_FILE"
-              if grep -q "CONFIG_ZSMALLOC" -- "$CONFIG_FILE"; then
-                  echo "提示：文件 $CONFIG_FILE 包含字符串 CONFIG_ZSMALLOC。"
-                  sed -i 's/CONFIG_ZSMALLOC=m/CONFIG_ZSMALLOC=y/g' "$CONFIG_FILE"
-              else
-                  echo "警告：文件 $CONFIG_FILE 不包含字符串 CONFIG_ZSMALLOC。"
-                  echo "CONFIG_ZSMALLOC=y" >> "$CONFIG_FILE"
-              fi
-                
-              sed -i 's/CONFIG_ZRAM=m/CONFIG_ZRAM=y/g' "$CONFIG_FILE"
-            fi
+      #       if [ "${{ inputs.kernel_version }}" = "5.10" ]; then
+      #         echo "CONFIG_ZSMALLOC=y" >> "$CONFIG_FILE"
+      #         echo "CONFIG_ZRAM=y" >> "$CONFIG_FILE"
+      #         echo "CONFIG_MODULE_SIG=n" >> "$CONFIG_FILE"
+      #         echo "CONFIG_CRYPTO_LZO=y" >> "$CONFIG_FILE"
+      #         echo "CONFIG_ZRAM_DEF_COMP_LZ4KD=y" >> "$CONFIG_FILE"
+      #       fi
 
-            if [ "${{ inputs.kernel_version }}" = "6.6" ]; then
-              echo "CONFIG_ZSMALLOC=y" >> "$CONFIG_FILE"
-              sed -i 's/CONFIG_ZRAM=m/CONFIG_ZRAM=y/g' "$CONFIG_FILE"
-            fi
+      #       if [ "${{ inputs.kernel_version }}" != "6.6" ] && [ "${{ inputs.kernel_version }}" != "5.10" ]; then
+      #         # sed -i 's/CONFIG_MODULE_SIG=y/CONFIG_MODULE_SIG=n/g' "$CONFIG_FILE"
+      #         if grep -q "CONFIG_ZSMALLOC" -- "$CONFIG_FILE"; then
+      #             echo "提示：文件 $CONFIG_FILE 包含字符串 CONFIG_ZSMALLOC。"
+      #             sed -i 's/CONFIG_ZSMALLOC=m/CONFIG_ZSMALLOC=y/g' "$CONFIG_FILE"
+      #         else
+      #             echo "警告：文件 $CONFIG_FILE 不包含字符串 CONFIG_ZSMALLOC。"
+      #             echo "CONFIG_ZSMALLOC=y" >> "$CONFIG_FILE"
+      #         fi
 
-            if [ "${{ inputs.android_version }}" = "android14" ] || [ "${{ inputs.android_version }}" = "android15" ]; then
-              sed -i 's/"drivers\/block\/zram\/zram\.ko",//g; s/"mm\/zsmalloc\.ko",//g' "$CONFIG/common/modules.bzl"
-              echo "CONFIG_MODULE_SIG_FORCE=n" >> "$CONFIG_FILE"
-              echo 'Android14_Bazel:已修复zram&zsmalloc'
-            elif [ "${{ inputs.kernel_version }}" = "5.10" ] || [ "${{ inputs.kernel_version }}" = "5.15" ]; then
-              rm "$CONFIG/common/android/gki_aarch64_modules"
-              touch "$CONFIG/common/android/gki_aarch64_modules"
-              echo '5.10&5.15:已修复zram&zsmalloc'
-            fi
+      #         sed -i 's/CONFIG_ZRAM=m/CONFIG_ZRAM=y/g' "$CONFIG_FILE"
+      #       fi
 
-             if grep -q "CONFIG_ZSMALLOC=y" "$CONFIG_FILE" && grep -q "CONFIG_ZRAM=y" "$CONFIG_FILE"; then
-              echo "CONFIG_CRYPTO_LZ4HC=y" >> "$CONFIG_FILE"
-              echo "CONFIG_CRYPTO_LZ4K=y" >> "$CONFIG_FILE"
-              echo "CONFIG_CRYPTO_LZ4KD=y" >> "$CONFIG_FILE"
-              echo "CONFIG_CRYPTO_842=y" >> "$CONFIG_FILE"
-              echo "CONFIG_CRYPTO_LZ4K_OPLUS=y" >> "$CONFIG_FILE"
-              echo "CONFIG_ZRAM_WRITEBACK=y" >> "$CONFIG_FILE"
-            fi
-          fi
-            
+      #       if [ "${{ inputs.kernel_version }}" = "6.6" ]; then
+      #         echo "CONFIG_ZSMALLOC=y" >> "$CONFIG_FILE"
+      #         sed -i 's/CONFIG_ZRAM=m/CONFIG_ZRAM=y/g' "$CONFIG_FILE"
+      #       fi
+
+      #       if [ "${{ inputs.android_version }}" = "android14" ] || [ "${{ inputs.android_version }}" = "android15" ]; then
+      #         sed -i 's/"drivers\/block\/zram\/zram\.ko",//g; s/"mm\/zsmalloc\.ko",//g' "$CONFIG/common/modules.bzl"
+      #         echo "CONFIG_MODULE_SIG_FORCE=n" >> "$CONFIG_FILE"
+      #         echo 'Android14_Bazel:已修复zram&zsmalloc'
+      #       elif [ "${{ inputs.kernel_version }}" = "5.10" ] || [ "${{ inputs.kernel_version }}" = "5.15" ]; then
+      #         rm "$CONFIG/common/android/gki_aarch64_modules"
+      #         touch "$CONFIG/common/android/gki_aarch64_modules"
+      #         echo '5.10&5.15:已修复zram&zsmalloc'
+      #       fi
+
+      #        if grep -q "CONFIG_ZSMALLOC=y" "$CONFIG_FILE" && grep -q "CONFIG_ZRAM=y" "$CONFIG_FILE"; then
+      #         echo "CONFIG_CRYPTO_LZ4HC=y" >> "$CONFIG_FILE"
+      #         echo "CONFIG_CRYPTO_LZ4K=y" >> "$CONFIG_FILE"
+      #         echo "CONFIG_CRYPTO_LZ4KD=y" >> "$CONFIG_FILE"
+      #         echo "CONFIG_CRYPTO_842=y" >> "$CONFIG_FILE"
+      #         echo "CONFIG_CRYPTO_LZ4K_OPLUS=y" >> "$CONFIG_FILE"
+      #         echo "CONFIG_ZRAM_WRITEBACK=y" >> "$CONFIG_FILE"
+      #       fi
+      #     fi
+
       - name: Add SUSFS Configuration Settings
         run: |
           echo "Changing to configuration directory: $CONFIG..."
@@ -335,7 +335,7 @@ jobs:
 
           echo "CONFIG_KSU_SUSFS_SUS_SU=n" >> ./common/arch/arm64/configs/gki_defconfig
           echo "CONFIG_KSU_MANUAL_HOOK=y" >> ./common/arch/arm64/configs/gki_defconfig
-          
+
           # Add SUSFS configuration settings
           echo "CONFIG_KSU_SUSFS=y" >> ./common/arch/arm64/configs/gki_defconfig
           echo "CONFIG_KSU_SUSFS_HAS_MAGIC_MOUNT=y" >> ./common/arch/arm64/configs/gki_defconfig
@@ -352,7 +352,7 @@ jobs:
           echo "CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y" >> ./common/arch/arm64/configs/gki_defconfig
           echo "CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y" >> ./common/arch/arm64/configs/gki_defconfig
           echo "CONFIG_KSU_SUSFS_OPEN_REDIRECT=y" >> ./common/arch/arm64/configs/gki_defconfig
-          
+
           # Add additional tmpfs config setting
           echo "CONFIG_TMPFS_XATTR=y" >> ./common/arch/arm64/configs/gki_defconfig
           echo "CONFIG_TMPFS_POSIX_ACL=y" >> ./common/arch/arm64/configs/gki_defconfig
@@ -364,7 +364,7 @@ jobs:
 
           # Remove check_defconfig
           sed -i 's/check_defconfig//' ./common/build.config.gki
-       
+
       - name: Config Kernel Name
         run: |
           echo "Changing to configuration directory: $CONFIG..."
@@ -437,7 +437,7 @@ jobs:
             mv oImage Image
             cd ../../..
           fi
-            
+
       - name: Create Bootimgs Folder and Copy Images
         if: ${{ inputs.android_version == 'android12' || inputs.android_version == 'android13' }}
         run: |
@@ -449,7 +449,7 @@ jobs:
           cp ./$CONFIG/out/${{ inputs.android_version }}-${{ inputs.kernel_version }}/dist/Image.lz4 ./bootimgs
           cp ./$CONFIG/out/${{ inputs.android_version }}-${{ inputs.kernel_version }}/dist/Image ./
           cp ./$CONFIG/out/${{ inputs.android_version }}-${{ inputs.kernel_version }}/dist/Image.lz4 ./
-          
+
           # Create gzip of the Image file
           gzip -n -k -f -9 ./Image > ./Image.gz
 
