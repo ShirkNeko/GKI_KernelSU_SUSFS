@@ -388,7 +388,12 @@ jobs:
             echo "CONFIG_CRYPTO_LZ4K_OPLUS=y" >> "$CONFIG_FILE"
             echo "CONFIG_ZRAM_WRITEBACK=y" >> "$CONFIG_FILE"
           fi
-          
+
+      - name: 复制源文件&应用LZ4KD&ZSTDN补丁
+        if: ${{ inputs.set_defbbr }}
+        run: |
+          echo "CONFIG_DEFAULT_BBR=y" >> ./common/arch/arm64/configs/gki_defconfig
+           
       - name: 添加SUSFS配置设置
         run: |
           echo "Changing to configuration directory: $CONFIG..."
