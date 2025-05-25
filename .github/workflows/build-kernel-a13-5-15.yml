@@ -41,7 +41,7 @@ on:
         type: boolean
         default: true
       set_defbbr:
-        description: '是否将BBR拥塞算法设为默认算法?（实验性）'
+        description: '是否将BBR设为默认拥塞算法?（实验性）'
         required: true
         type: boolean
         default: false
