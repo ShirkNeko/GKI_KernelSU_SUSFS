@@ -40,6 +40,11 @@ on:
         required: true
         type: boolean
         default: true
+      set_defbbr:
+        description: '是否将BBR设为默认拥塞算法?（实验性）'
+        required: true
+        type: boolean
+        default: false
       get_manager:
         description: '是否同时获取最新KSU管理器?（实验性功能，报错请关闭）'
         required: true
