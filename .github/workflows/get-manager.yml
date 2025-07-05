@@ -39,7 +39,7 @@ jobs:
             git clone https://github.com/SukiSU-Ultra/SukiSU-Ultra.git
             cd SukiSU-Ultra
             KSU_GIT_VERSION=$(git rev-list --count HEAD)
-            KSU_VERSION=$((10000 + KSU_GIT_VERSION + 606))
+            KSU_VERSION=$((10000 + KSU_GIT_VERSION + 700))
             echo $KSU_VERSION
             echo "KSU_VERSION=$KSU_VERSION" >> $GITHUB_ENV
           else
