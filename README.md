@@ -6,7 +6,7 @@
 >
 > 最近更新：1.一加8ELITE处理器可使用6.6内核(未测试)、2.修复这些GKI版本编译报错——[5.10.(66、81、101)、5.15.(74、94、104)]
 ### 下载
-可以[在此](https://github.com/zzh20188/GKI_KernelSU_SUSFS/releases)下载您的资源
+可以[在此](https://github.com/ShirkNeko/GKI_KernelSU_SUSFS/releases)下载您的资源
 1. 关于Anykernel3.zip，下载即用！
 - 然后使用刷入软件，例如[HorizonKernelFlasher](https://github.com/libxzr/HorizonKernelFlasher/releases)进行刷写内核
 2. 关于boot.img，下载与你内核格式相匹配的（无压缩、gz、lz4），[参考](https://kernelsu.org/zh_CN/guide/installation.html#install-by-kernelsu-boot-image) **找到合适的 boot.img** 一节
@@ -32,7 +32,7 @@
 ### KSU管理器
 在编译完成后，你会看到类似 `Next-Manager(12600)`的文件，简单来说这就是与内核一同上传的***最新管理器***。
 ![例子](./assets/get_manager.gif)
-同样的，在[Release](https://github.com/zzh20188/GKI_KernelSU_SUSFS/releases)也同样包含***最新管理器***！
+同样的，在[Release](https://github.com/ShirkNeko/GKI_KernelSU_SUSFS/releases)也同样包含***最新管理器***！
 ![release](./assets/release_manager.gif)
 
 ### 紧急救援指南
