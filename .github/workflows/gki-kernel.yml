@@ -213,6 +213,68 @@ jobs:
           echo "obj-y += hmbird_patch.o" >> Makefile
           tail -n 3 Makefile
       
+      - name: Auto fetch and integrate scxe driver
+        run: |
+          echo "Cloning scxe driver repository..."
+          # 克隆 scxe 仓库到一个名为 scxe_temp 的临时文件夹
+          git clone https://github.com/Suxiaoqinx/scxe.git scxe_temp
+          
+          # 检查仓库是否为空，如果为空则跳过后续步骤
+          if [ -z "$(ls -A scxe_temp)" ]; then
+            echo "Warning: scxe repository is empty. Skipping integration."
+          else
+            echo "scxe repository cloned successfully. Integrating into kernel source..."
+            
+            # 定义内核源码中 scxe 驱动的目标路径
+            SCXE_TARGET_DIR="$CONFIG/common/drivers/cpufreq/scxe"
+            
+            # 创建目标目录
+            mkdir -p "$SCXE_TARGET_DIR"
+            
+            # --- 复制文件 ---
+            echo "Copying source files..."
+            # 1. 复制根目录下的所有 .c 和 .h 文件
+            cp scxe_temp/*.c "$SCXE_TARGET_DIR/" 2>/dev/null || true
+            cp scxe_temp/*.h "$SCXE_TARGET_DIR/" 2>/dev/null || true
+            # 2. 复制 hmbird 目录下的所有 .c 和 .h 文件
+            cp scxe_temp/hmbird/*.c "$SCXE_TARGET_DIR/" 2>/dev/null || true
+            cp scxe_temp/hmbird/*.h "$SCXE_TARGET_DIR/" 2>/dev/null || true
+            # 3. 复制 hmbird_gki 目录下的所有 .c 和 .h 文件
+            cp scxe_temp/hmbird_gki/*.c "$SCXE_TARGET_DIR/" 2>/dev/null || true
+            cp scxe_temp/hmbird_gki/*.h "$SCXE_TARGET_DIR/" 2>/dev/null || true
+
+            # --- 自动创建 Makefile ---
+            echo "Creating Makefile for scxe driver..."
+            # 使用 find 命令来自动查找所有 .c 文件，并生成对应的 .o 文件列表
+            SCXE_OBJS=$(find "$SCXE_TARGET_DIR" -maxdepth 1 -type f -name "*.c" | sed "s|^$SCXE_TARGET_DIR/||" | sed 's/\.c/\.o/' | tr '\n' ' ')
+            
+            # 写入 Makefile
+            echo "obj-\$(CONFIG_CPUFREQ_SCX) += ${SCXE_OBJS}" > "$SCXE_TARGET_DIR/Makefile"
+            echo "Makefile content:"
+            cat "$SCXE_TARGET_DIR/Makefile"
+
+            # --- 自动创建 Kconfig ---
+            echo "Creating Kconfig for scxe driver..."
+            cat << EOF > "$SCXE_TARGET_DIR/Kconfig"
+            config CPUFREQ_SCX
+                tristate "SCX cpufreq driver"
+                help
+                  This adds the SCX CPUfreq driver for some specific SoCs.
+                  This driver is automatically fetched from github.
+            EOF
+
+            # --- 修改上层编译系统 ---
+            echo "Updating parent Makefile and Kconfig..."
+            echo "obj-y += scxe/" >> "$CONFIG/common/drivers/cpufreq/Makefile"
+            echo 'source "drivers/cpufreq/scxe/Kconfig"' >> "$CONFIG/common/drivers/cpufreq/Kconfig"
+
+            # --- 启用内核配置 ---
+            echo "Enabling CONFIG_CPUFREQ_SCX as a module..."
+            cd "$CONFIG"
+            ./common/scripts/config --file ./common/arch/arm64/configs/gki_defconfig -m CPUFREQ_SCX
+            echo "SCX driver integration complete."
+          fi
+
       - name: 确定 KernelSU 的分支
         run: |
           branch_input="${{ inputs.kernelsu_branch }}"
