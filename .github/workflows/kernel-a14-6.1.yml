@@ -1,4 +1,4 @@
-qname: Android 14 6.1
+name: Android 14 6.1
 permissions:
   contents: write  # Allow writing to repository contents (for pushing tags)
   actions: write   # Allows triggering actions
