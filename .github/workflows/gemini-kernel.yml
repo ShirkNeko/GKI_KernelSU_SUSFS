@@ -1,0 +1,105 @@
+name: GKI Kernel CI
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Build Environment
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential git ccache automake lz4 flex libssl-dev \
+            bison bc cpio libncurses5-dev zip
+
+      - name: Set up ccache
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: ${{ github.ref }}
+          max-size: 2G
+
+      - name: Set up KernelSU
+        run: |
+          curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash
+
+      - name: Clone AnyKernel3
+        uses: actions/checkout@v4
+        with:
+          repository: 'osm0sis/AnyKernel3'
+          path: 'AnyKernel3'
+
+      - name: Build Kernel
+        run: |
+          # Set Build Variables
+          export ARCH=arm64
+          export KERNEL_VERSION=5.15
+          export ANDROID_VERSION=13
+
+          # Clone AOSP Build Tools & Kernel Source
+          git clone --depth=1 https://github.com/aosp-mirror/kernel_build.git -b android-13.0.0_r0.11 build
+          git clone --depth=1 https://github.com/aosp-mirror/kernel-common.git -b android-13-5.15 common
+
+          # --- Kernel Configuration & Optimizations ---
+          # Start with the standard GKI config
+          cp common/arch/arm64/configs/gki_defconfig .config
+
+          # Apply custom configurations
+          # This uses Kconfig scripts to ensure dependencies are handled correctly
+          ./common/scripts/kconfig/merge_config.sh .config - <<EOF
+          # Monolithic Build & Core Settings
+          CONFIG_MODULES=n
+          CONFIG_SUSFS=y
+          CONFIG_IKCONFIG=y
+          CONFIG_IKCONFIG_PROC=y
+
+          # Performance Optimizations for Snapdragon 8 Gen 2
+          CONFIG_HZ_300=y
+          CONFIG_HZ=300
+          CONFIG_LTO_CLANG_FULL=y
+          CONFIG_SLUB_DEBU=n
+          CONFIG_PROFILING=n
+          CONFIG_DEBUG_INFO=n
+          CONFIG_DEBUG_KERNEL=n
+
+          # Networking (BBR is default in 5.15, but we ensure it's enabled)
+          CONFIG_TCP_CONG_BBR=y
+          CONFIG_DEFAULT_TCP_CONG="bbr"
+
+          # ZRAM with LZ4KD (as requested)
+          CONFIG_ZRAM=y
+          CONFIG_ZRAM_DEF_COMP_LZ4KD=y
+          EOF
+
+          # Build the kernel
+          ./build/build.sh
+
+      - name: Package AnyKernel3 Zip
+        run: |
+          # Remove placeholder files from AnyKernel3
+          rm -f AnyKernel3/Image AnyKernel3/zImage AnyKernel3/dtb AnyKernel3/dtbo.img
+
+          # Copy the newly built kernel image
+          cp out/android13-5.15/dist/Image AnyKernel3/
+          
+          # Zip the AnyKernel3 package
+          cd AnyKernel3
+          zip -r9 ../AnyKernel3-flashable.zip .
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: GKI-Build-Output
+          path: |
+            out/android13-5.15/dist/boot.img
+            AnyKernel3-flashable.zip
