@@ -1,4 +1,4 @@
-name: Test Release
+name: GKI Build Kernel For Update
 
 permissions:
   contents: write
