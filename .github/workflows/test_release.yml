@@ -1,4 +1,4 @@
-name: Test Release
+name: GKI2.0
 
 permissions:
   contents: write
@@ -15,7 +15,7 @@ on:
         description: 'Do you want to create a release?'
         required: true
         type: boolean
-        default: true
+        default: false
       kernels_to_build:
         description: |
           Comma-separated list of kernels to build/release, e.g.:
@@ -568,16 +568,3 @@ jobs:
         run: |
           echo "Uploaded assets:"
           gh release view "${{ env.NEW_TAG }}" --json assets -q '.assets[].name'
-
-      - name: send telegram message on push
-        env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          TELEGRAM_MESSAGE_THREAD_ID: ${{ secrets.TELEGRAM_MESSAGE_THREAD_ID }}
-        run: |
-            curl -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendMessage" \
-            -d "chat_id=$TELEGRAM_CHAT_ID" \
-            -d "message_thread_id=$TELEGRAM_MESSAGE_THREAD_ID" \
-            -d "text=Latest release: 
-            https://github.com/ShirkNeko/GKI_KernelSU_SUSFS/releases/tag/${{ env.NEW_TAG }}
-            ${{ env.RELEASE_NOTES }}"    
