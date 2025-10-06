@@ -258,6 +258,24 @@ jobs:
             curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh" | bash $BRANCH
           fi
 
+      - name: 添加 Baseband-guard 支持
+        run: |
+          echo "更改为配置目录: $CONFIG..."
+          cd "$CONFIG/common"
+          
+          echo "下载并运行 Baseband-guard setup 脚本..."
+          wget -O- https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh | bash
+          
+          echo "启用 Baseband-guard 内核配置..."
+          CONFIG_FILE="arch/arm64/configs/gki_defconfig"
+          echo "CONFIG_BBG=y" >> "$CONFIG_FILE"
+          
+          # 对于 GitHub Actions 云编译，修改 LSM Kconfig
+          echo "修改 security/Kconfig 以包含 baseband_guard..."
+          sed -i '/^config LSM$/,/^help$/{ /^[[:space:]]*default/ { /baseband_guard/! s/landlock/landlock,baseband_guard/ } }' security/Kconfig
+          
+          echo "Baseband-guard 配置完成"
+          
       - name: 为 KernelSU 变体安装 SUSFS 补丁
         run: |
           echo "更改为配置目录: $CONFIG..."
