@@ -66,6 +66,11 @@ on:
         required: true
         type: boolean
         default: true
+      rekernel_enable:
+        description: '添加 Re-Kernel 支持?'
+        required: true
+        type: boolean
+        default: true
 jobs:
 
   build-kernel-a14-6-1:
@@ -81,6 +86,7 @@ jobs:
       use_O2: ${{ inputs.use_O2 || false }}
       BBG: ${{ inputs.BBG }}
       set_defbbr: ${{ inputs.set_defbbr }}
+      rekernel_enable: ${{ inputs.rekernel_enable }}
       build_time: ${{ inputs.build_time }}
   get-ksu-manager:
     if: ${{ inputs.get_manager }}
