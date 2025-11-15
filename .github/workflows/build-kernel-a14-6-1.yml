@@ -1,8 +1,8 @@
 name: 编译内核a14-6-1
 
 permissions:
-  contents: write  # Allow writing to repository contents (for pushing tags)
-  actions: write   # Allows triggering actions
+  contents: write
+  actions: write
   
 on:
   workflow_dispatch:
@@ -22,52 +22,52 @@ on:
         required: true
         type: choice
         options:
-          - Stable(标准)
-          - Dev(开发)
-          - Other(其他/指定)
-        default: Dev(开发)
+          - "Stable(标准)"
+          - "Dev(开发)"
+          - "Other(其他/指定)"
+        default: "Dev(开发)"
       version:
-        description: '自定义版本名(如6.1.93后面的字符/留空则使用默认版本号)'
+        description: "自定义版本名(如6.1.93后面的字符/留空则使用默认版本号)"
         required: true
         type: string
         default: "-android14-11-gca0ef6d17716-ab13624819"
       build_time:
-        description: '设置内核构建时间(格式见仓库说明)'
+        description: "设置内核构建时间(格式见仓库说明)"
         required: true
         type: string
         default: "Tue Jun 10 18:59:08 UTC 2025"
       lz4_upd:
-        description: 'LZ4算法更新?'
+        description: "LZ4算法更新?"
         required: true
         type: boolean
         default: true
       more_zram_kpm:
-        description: '是否开启增加更多ZRAM算法以及KPM功能?'
+        description: "是否开启增加更多ZRAM算法以及KPM功能?"
         required: false
         type: boolean
         default: false
       use_O2:
-        description: '是否开启O2编译优化?'
+        description: "是否开启O2编译优化?"
         required: true
         type: boolean
         default: true
       BBG:
-        description: '是否启用内核层面阻止对关键分区/设备节点的非法写入(LSM)？'
+        description: "是否启用内核层面阻止对关键分区/设备节点的非法写入(LSM)?"
         required: true
         type: boolean
         default: true
       set_defbbr:
-        description: '是否将BBR设为默认拥塞算法?（实验性）'
+        description: "是否将BBR设为默认拥塞算法?（实验性）"
         required: true
         type: boolean
         default: true
       rekernel_enable:
-        description: '添加 Re-Kernel 支持?'
+        description: "添加 Re-Kernel 支持?"
         required: true
         type: boolean
         default: true
-jobs:
 
+jobs:
   build-kernel-a14-6-1:
     uses: ./.github/workflows/kernel-a14-6.1.yml
     secrets: inherit
