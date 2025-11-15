@@ -32,11 +32,6 @@ on:
         required: false
         type: boolean
         default: false
-      use_kpm:
-        description: '是否开启KPM功能?'
-        required: false
-        type: boolean
-        default: false
       use_O2:
         description: '是否开启O2编译优化?'
         required: true
@@ -120,7 +115,6 @@ jobs:
       version: ${{ inputs.version || '' }}
       lz4_upd: ${{ inputs.lz4_upd }}
       more_zram_kpm: ${{ inputs.more_zram }}
-      use_kpm: ${{ inputs.use_kpm }}
       use_O2: ${{ inputs.use_O2 || false }}
       supp_op: ${{ inputs.supp_op || false }}
       BBG: ${{ inputs.BBG }}
