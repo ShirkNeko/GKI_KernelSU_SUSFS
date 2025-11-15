@@ -37,7 +37,7 @@ on:
       version:
         required: false
         type: string
-      use_zram:
+      more_zram:
         required: true
         type: boolean
         default: true
@@ -418,7 +418,7 @@ jobs:
           fi
           
       - name: 升级LZ4算法至1.10.0
-        if: ${{ inputs.use_zram }}
+        if: ${{ inputs.more_zram }}
         run: |
 
           echo "更改为配置目录: $CONFIG..."
@@ -461,7 +461,7 @@ jobs:
           fi
           
       - name: 复制源文件 & 应用LZ4KD & ZSTDN补丁
-        if: ${{ inputs.use_zram }}
+        if: ${{ inputs.more_zram }}
         run: |
           echo "更改为配置目录: $CONFIG..."
           cd "$CONFIG/common"
@@ -494,7 +494,7 @@ jobs:
           fi
 
       - name: LZ4KD & Lz4k_oplus配置
-        if: ${{ inputs.use_zram }}
+        if: ${{ inputs.more_zram }}
         run: |
           set -x
           set -e
