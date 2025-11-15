@@ -45,6 +45,10 @@ on:
         required: true
         type: boolean
         default: true
+      use_O2:
+        required: true
+        type: boolean
+        default: true
       supp_op:
         required: true
         type: boolean
@@ -580,6 +584,24 @@ jobs:
             fi
           fi
 
+      - name: 编译优化
+        if: ${{ inputs.use_O2 }}
+        run: |
+          cd "$CONFIG"
+          echo "启用 O2 编译优化..."
+          echo "CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE=y" >> ./common/arch/arm64/configs/gki_defconfig
+          echo "CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE_O3=n" >> ./common/arch/arm64/configs/gki_defconfig
+
+          echo "启用 Thin LTO 优化..."
+          echo "CONFIG_LTO=y" >> ./common/arch/arm64/configs/gki_defconfig
+          echo "CONFIG_LTO_CLANG=y" >> ./common/arch/arm64/configs/gki_defconfig
+          echo "CONFIG_LTO_CLANG_THIN=y" >> ./common/arch/arm64/configs/gki_defconfig
+          echo "CONFIG_OPTIMIZE_INLINING=y" >> ./common/arch/arm64/configs/gki_defconfig
+
+          echo "CONFIG_CC_HAS_FAST_OPS=y" >> ./common/arch/arm64/configs/gki_defconfig
+          # debug 输出
+          tail -n 10 ./common/arch/arm64/configs/gki_defconfig
+          
       - name: Build with retry
         uses: nick-fields/retry@v3
         with:
