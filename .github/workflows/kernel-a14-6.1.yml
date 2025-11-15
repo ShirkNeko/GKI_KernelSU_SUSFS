@@ -42,7 +42,16 @@ on:
         required: true
         type: boolean
         default: true
-
+      set_defbbr:
+        description: '是否将BBR设为默认拥塞算法?（实验性）'
+        required: true
+        type: boolean
+        default: true
+      build_time:
+        description: '设置内核构建时间(格式见仓库说明)'
+        required: false
+        type: string
+        
 jobs:
   build-kernel-a14-6-1-kernelsu-susfs:
     strategy:
