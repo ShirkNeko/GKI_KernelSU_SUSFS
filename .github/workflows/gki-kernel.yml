@@ -172,7 +172,7 @@ jobs:
           # Sukisu的补丁仓库
           git clone https://github.com/ShirkNeko/SukiSU_patch.git
           # LZ4 1.10.0的补丁仓库
-          git clone --depth=1 https://github.com/zzh20188/GKI_KernelSU_SUSFS.git zzh_patches
+          git clone https://github.com/zzh20188/GKI_KernelSU_SUSFS.git zzh_patch
           
       - name: 设置 CONFIG 环境变量
         run: |
@@ -409,7 +409,7 @@ jobs:
       - name: 克隆LZ4升级依赖项
         run: |
           echo "Verifying LZ4 patches repository..." | tee -a error-log.txt
-          if [ -d "zzh_patches" ]; then
+          if [ -d "zzh_patche" ]; then
             echo "✓ LZ4 patches repository already available" | tee -a error-log.txt
           else
             echo "✗ ERROR: LZ4 patches repository missing!" | tee -a error-log.txt
@@ -417,50 +417,48 @@ jobs:
           fi
           echo "" >> error-log.txt
           
-      - name: 升级到LZ4 1.10.0
+      - name: 升级LZ4至1.10.0
         if: ${{ inputs.use_zram }}
         run: |
-          echo "--- LZ4 1.10.0 Upgrade ---" | tee -a ../error-log.txt
-          echo "Upgrading LZ4 to version 1.10.0..." | tee -a ../error-log.txt
-          
+
+          echo "更改为配置目录: $CONFIG..."
+          cd "$CONFIG/common"
+          echo 'lz升级'
+          # 删除lz4库旧有文件
           files=(
               "lib/lz4/lz4_compress.c"
               "lib/lz4/lz4_decompress.c"
               "lib/lz4/lz4defs.h"
               "lib/lz4/lz4hc_compress.c"
           )
-          
+
           for file in "${files[@]}"; do
               if [ -e "$file" ]; then
                   rm "$file"
-                  echo "  Removed: $file" | tee -a ../error-log.txt
+                  echo "$file 已删除"
               else
-                  echo "  ⚠ File not found (skipping): $file" | tee -a ../error-log.txt
+                  echo "$file 不存在"
               fi
           done
-          
-          cp -r ../zzh_patches/zram/lz4/* ./lib/lz4/ 2>&1 | tee -a ../error-log.txt
-          cp -r ../zzh_patches/zram/include/linux/* ./include/linux/ 2>&1 | tee -a ../error-log.txt
-          
-          if [ -f "../zzh_patches/zram/${{ env.KERNEL_VERSION }}/lz4_1.10.0.patch" ]; then
-            cp ../zzh_patches/zram/${{ env.KERNEL_VERSION }}/lz4_1.10.0.patch ./
-            echo "Applying LZ4 1.10.0 patch..." | tee -a ../error-log.txt
-            if patch -p1 -F 3 --fuzz=5 < lz4_1.10.0.patch 2>&1 | tee -a ../error-log.txt; then
-              echo "✓ LZ4 1.10.0 patch applied successfully" | tee -a ../error-log.txt
-            else
-              echo "⚠ LZ4 1.10.0 patch had issues (continuing)" | tee -a ../error-log.txt
-            fi
-          else
-            echo "⚠ LZ4 1.10.0 patch not found for kernel ${{ env.KERNEL_VERSION }}" | tee -a ../error-log.txt
-          fi
-          
+
+          cp -r ../../zzh_patch/zram/lz4/* ./lib/lz4/
+          cp -r ../../zzh_patch/zram/include/linux/* ./include/linux/
+          cp -r ../../zzh_patch/zram/${{ inputs.kernel_version }}/lz4_1.10.0.patch ./
+
+          patch -p1 -F 3 --fuzz=5 < lz4_1.10.0.patch || true
+
+          # 检查文件是否存在
           if [ -f "fs/f2fs/Makefile" ]; then
+              # 检查是否包含指定行
               if ! grep -qF "f2fs-\$(CONFIG_F2FS_IOSTAT) += iostat.o" "fs/f2fs/Makefile"; then
                   echo "f2fs-\$(CONFIG_F2FS_IOSTAT) += iostat.o" >> "fs/f2fs/Makefile"
-                  echo "✓ Added F2FS iostat configuration" | tee -a ../error-log.txt
+                  echo "已添加: f2fs-\$(CONFIG_F2FS_IOSTAT) += iostat.o"
+              else
+                  echo "文件已经包含: f2fs-\$(CONFIG_F2FS_IOSTAT) += iostat.o"
               fi
+          else
+              echo "文件不存在: fs/f2fs/Makefile"
           fi
-          echo "" >> ../error-log.txt
           
       - name: 复制源文件 & 应用LZ4KD & ZSTDN补丁
         if: ${{ inputs.use_zram }}
