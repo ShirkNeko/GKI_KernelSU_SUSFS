@@ -29,9 +29,9 @@ on:
         default: true
       use_kpm:
         description: '是否开启KPM功能?'
-        required: true
+        required: false
         type: boolean
-        default: true
+        default: false
       use_O2:
         description: '是否开启O2编译优化?'
         required: true
@@ -41,7 +41,7 @@ on:
         description: '是否启用内核层面阻止对关键分区/设备节点的非法写入(LSM)？'
         required: true
         type: boolean
-        default: false
+        default: true
 
 jobs:
   build-kernel-a14-6-1-kernelsu-susfs:
