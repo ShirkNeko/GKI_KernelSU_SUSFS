@@ -114,7 +114,7 @@ jobs:
       kernelsu_branch: ${{ inputs.kernelsu_branch || 'Dev' }}
       version: ${{ inputs.version }}
       lz4_upd: ${{ inputs.lz4_upd }}
-      more_zram_kpm: ${{ inputs.more_zram }}
+      more_zram_kpm: ${{ inputs.more_zram_kpm }}
       use_O2: ${{ inputs.use_O2 || false }}
       supp_op: ${{ inputs.supp_op || false }}
       BBG: ${{ inputs.BBG }}
