@@ -78,7 +78,7 @@ jobs:
       version: ${{ inputs.version }}
       lz4_upd: ${{ inputs.lz4_upd }}
       more_zram_kpm: ${{ inputs.more_zram_kpm }}
-      use_O2: ${{ inputs.use_O2 || false }}
+      use_O2: ${{ inputs.use_O2 }}
       BBG: ${{ inputs.BBG }}
       set_defbbr: ${{ inputs.set_defbbr }}
       rekernel_enable: ${{ inputs.rekernel_enable }}
