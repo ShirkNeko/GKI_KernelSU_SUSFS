@@ -27,8 +27,8 @@ on:
         required: true
         type: boolean
         default: true
-      more_zram:
-        description: '是否开启增加更多ZRAM算法?'
+      more_zram_kpm:
+        description: '是否开启增加更多ZRAM算法以及KPM功能?'
         required: false
         type: boolean
         default: false
@@ -119,7 +119,7 @@ jobs:
       kernelsu_branch: ${{ inputs.kernelsu_branch || 'Dev' }}
       version: ${{ inputs.version || '' }}
       lz4_upd: ${{ inputs.lz4_upd }}
-      more_zram: ${{ inputs.more_zram }}
+      more_zram_kpm: ${{ inputs.more_zram }}
       use_kpm: ${{ inputs.use_kpm }}
       use_O2: ${{ inputs.use_O2 || false }}
       supp_op: ${{ inputs.supp_op || false }}
