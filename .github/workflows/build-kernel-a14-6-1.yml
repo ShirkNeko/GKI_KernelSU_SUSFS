@@ -56,11 +56,6 @@ on:
         required: true
         type: boolean
         default: true
-      get_manager:
-        description: '是否同时获取最新KSU管理器?（实验性功能，报错请关闭）'
-        required: false
-        type: boolean
-        default: false
       BBG:
         description: '是否启用内核层面阻止对关键分区/设备节点的非法写入(LSM)？'
         required: true
@@ -94,10 +89,3 @@ jobs:
       set_defbbr: ${{ inputs.set_defbbr }}
       rekernel_enable: ${{ inputs.rekernel_enable }}
       build_time: ${{ inputs.build_time }}
-  get-ksu-manager:
-    if: ${{ inputs.get_manager }}
-    uses: ./.github/workflows/get-manager.yml
-    secrets: inherit
-    with:
-      kernelsu_variant: ${{ inputs.kernelsu_variant }}
-
