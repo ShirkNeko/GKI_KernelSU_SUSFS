@@ -459,6 +459,12 @@ jobs:
           else
               echo "文件不存在: fs/f2fs/Makefile"
           fi
+          # 使用LZ4作为默认ZRAM算法
+          set -x
+          set -e
+          echo "使用LZ4作为默认ZRAM算法"
+          CONFIG_FILE="$CONFIG/common/arch/arm64/configs/gki_defconfig"
+          echo "CONFIG_ZRAM_DEF_COMP_LZ4=y" >> "$CONFIG_FILE"
           
       - name: 复制源文件 & 应用LZ4KD & ZSTDN补丁
         if: ${{ inputs.more_zram_kpm }}
@@ -492,8 +498,6 @@ jobs:
             cp ../../kernel_patches/69_hide_stuff.patch ./
             patch -p1 -F 3 < 69_hide_stuff.patch
           fi
-          # 使用LZ4作为默认ZRAM算法
-          echo "CONFIG_ZRAM_DEF_COMP_LZ4=y" >> "$CONFIG_FILE"
 
       - name: LZ4KD & Lz4k_oplus配置
         if: ${{ inputs.more_zram_kpm }}
