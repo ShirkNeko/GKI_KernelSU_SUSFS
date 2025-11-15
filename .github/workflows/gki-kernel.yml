@@ -66,7 +66,7 @@ on:
         type: boolean
         default: true
       build_time:
-        required: false
+        required: true
         type: string
 jobs:
   build-kernel-kernelsu-susfs:
