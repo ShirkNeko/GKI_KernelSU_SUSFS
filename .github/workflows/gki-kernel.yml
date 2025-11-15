@@ -37,10 +37,14 @@ on:
       version:
         required: false
         type: string
-      more_zram:
+      lz4_upd:
         required: true
         type: boolean
         default: true
+      more_zram:
+        required: false
+        type: boolean
+        default: false
       use_kpm:
         required: false
         type: boolean
@@ -418,7 +422,7 @@ jobs:
           fi
           
       - name: 升级LZ4算法至1.10.0
-        if: ${{ inputs.more_zram }}
+        if: ${{ inputs.lz4_upd }}
         run: |
 
           echo "更改为配置目录: $CONFIG..."
