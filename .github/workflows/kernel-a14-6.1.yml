@@ -23,7 +23,7 @@ on:
         type: string
         default: "-android14-11-gca0ef6d17716-ab13624819"
       lz4_upd:
-        description: 'LZ4算法更新?'
+        description: '升级LZ4算法至1.10.0?'
         required: true
         type: boolean
         default: true
