@@ -404,7 +404,7 @@ jobs:
             patch -p1 -F 3 < scope_min_manual_hooks_v1.6.patch
           fi
 
-      - name: Clone additional repositories for LZ4 upgrade
+      - name: 为LZ4升级克隆额外的仓库
         run: |
           echo "Verifying LZ4 patches repository..." | tee -a error-log.txt
           if [ -d "zzh_patches" ]; then
@@ -415,7 +415,7 @@ jobs:
           fi
           echo "" >> error-log.txt
           
-      - name: Upgrade LZ4 to version 1.10.0
+      - name: 升级LZ4到1.10.0版本
         if: ${{ github.event.inputs.enable_zram == 'true' }}
         working-directory: kernel
         run: |
