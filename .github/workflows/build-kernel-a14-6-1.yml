@@ -33,8 +33,9 @@ on:
         default: "-android14-11-gca0ef6d17716-ab13624819"
       build_time:
         description: '设置内核构建时间(格式见仓库说明)'
-        required: false
+        required: true
         type: string
+        default: "Tue Jun 10 18:59:08 UTC 2025"
       use_zram:
         description: '是否开启增加更多ZRAM算法?'
         required: true
