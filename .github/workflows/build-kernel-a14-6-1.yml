@@ -42,7 +42,7 @@ on:
         type: boolean
         default: true
       more_zram_kpm:
-        description: "是否开启增加更多ZRAM算法以及KPM功能?"
+        description: "是否启用更多ZRAM算法以及KPM功能?"
         required: false
         type: boolean
         default: false
