@@ -36,7 +36,7 @@ on:
         required: true
         type: string
         default: "Tue Jun 10 18:59:08 UTC 2025"
-      use_zram:
+      more_zram:
         description: '是否开启增加更多ZRAM算法?'
         required: true
         type: boolean
@@ -81,7 +81,7 @@ jobs:
       kernelsu_variant: ${{ inputs.kernelsu_variant }}
       kernelsu_branch: ${{ inputs.kernelsu_branch }}
       version: ${{ inputs.version }}
-      use_zram: ${{ inputs.use_zram }}
+      more_zram: ${{ inputs.more_zram }}
       use_kpm: ${{ inputs.use_kpm }}
       use_O2: ${{ inputs.use_O2 || false }}
       BBG: ${{ inputs.BBG }}
