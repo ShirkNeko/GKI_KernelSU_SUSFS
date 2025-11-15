@@ -47,6 +47,11 @@ on:
         required: true
         type: boolean
         default: true
+       rekernel_enable:
+        description: '添加 Re-Kernel 支持?'
+        required: true
+        type: boolean
+        default: true
       build_time:
         description: '设置内核构建时间(格式见仓库说明)'
         required: true
@@ -114,4 +119,5 @@ jobs:
       supp_op: ${{ inputs.supp_op || false }}
       BBG: ${{ inputs.BBG }}
       set_defbbr: ${{ inputs.set_defbbr }}
+      rekernel_enable: ${{ inputs.rekernel_enable }}
       build_time: ${{ inputs.build_time || '' }}
