@@ -405,17 +405,6 @@ jobs:
             cp ../../SukiSU_patch/hooks/scope_min_manual_hooks_v1.6.patch ./
             patch -p1 -F 3 < scope_min_manual_hooks_v1.6.patch
           fi
-
-      - name: 克隆LZ4升级依赖项
-        run: |
-          echo "Verifying LZ4 patches repository..." | tee -a error-log.txt
-          if [ -d "zzh_patche" ]; then
-            echo "✓ LZ4 patches repository already available" | tee -a error-log.txt
-          else
-            echo "✗ ERROR: LZ4 patches repository missing!" | tee -a error-log.txt
-            exit 1
-          fi
-          echo "" >> error-log.txt
           
       - name: 升级LZ4至1.10.0
         if: ${{ inputs.use_zram }}
