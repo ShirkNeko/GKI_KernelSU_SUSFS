@@ -626,9 +626,19 @@ jobs:
 
           # 如果你需要改构建时间,请把以下变量 CURRENT_TIME 修改为如下例子字符串,如:CURRENT_TIME="Sat Jun 07 06:29:29 UTC 2025"
           # 该字符串表示 UTC时间: 2025年6月7日 06:29:29,"Sat" 是星期六的缩写，而 "Jun" 是六月的缩写
-          # 如果你想使用北京时间应为:CURRENT_TIME="Sat Jun 07 14:29:29 CST 2025"
-          CURRENT_TIME=$(date -u +"%a %b %d %H:%M:%S UTC %Y")
+          # 如果你想使用北京时间应为:CURRENT_TIME="Tue Jun 10 18:59:08 UTC 2025"
+          # 初始化
+          CURRENT_TIME=""
 
+          if [ ! -z "${{ inputs.build_time }}" ]; then
+            echo "构建时间不为空"
+            date -d "${{ inputs.build_time }}" >/dev/null 2>&1 || echo "警告: 变量 '${{ inputs.build_time }}' 不是一个有效的日期格式！"
+            CURRENT_TIME="${{ inputs.build_time }}"
+          else
+            echo "构建时间为空，使用当前时间"
+            CURRENT_TIME=$(date -u +"%a %b %d %H:%M:%S UTC %Y")
+          fi
+          
           echo "CURRENT_TIME=$CURRENT_TIME"
           perl -pi -e "s{UTS_VERSION=\"\\\$\(echo \\\$UTS_VERSION \\\$CONFIG_FLAGS \\\$TIMESTAMP \\| cut -b -\\\$UTS_LEN\)\"}{UTS_VERSION=\"#1 SMP PREEMPT $CURRENT_TIME\"}" ./common/scripts/mkcompile_h
 
