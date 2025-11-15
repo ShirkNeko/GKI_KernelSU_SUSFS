@@ -171,6 +171,8 @@ jobs:
           git clone https://github.com/Tools-cx-app/kernel_patches.git
           # Sukisu的补丁仓库
           git clone https://github.com/ShirkNeko/SukiSU_patch.git
+          # LZ4升级的补丁仓库
+          git clone https://github.com/zzh20188/GKI_KernelSU_SUSFS.git zzh_patches
           
       - name: 设置 CONFIG 环境变量
         run: |
@@ -404,7 +406,7 @@ jobs:
             patch -p1 -F 3 < scope_min_manual_hooks_v1.6.patch
           fi
 
-      - name: 为LZ4升级克隆额外的仓库
+      - name: 为LZ4升级克隆依赖项
         run: |
           echo "Verifying LZ4 patches repository..." | tee -a error-log.txt
           if [ -d "zzh_patches" ]; then
