@@ -22,7 +22,7 @@ on:
         required: true
         type: string
         default: "-android14-11-gca0ef6d17716-ab13624819"
-      use_zram:
+      more_zram:
         description: '是否开启增加更多ZRAM算法?'
         required: true
         type: boolean
@@ -113,7 +113,7 @@ jobs:
       kernelsu_variant: ${{ inputs.kernelsu_variant || 'Next' }}
       kernelsu_branch: ${{ inputs.kernelsu_branch || 'Dev' }}
       version: ${{ inputs.version || '' }}
-      use_zram: ${{ inputs.use_zram }}
+      more_zram: ${{ inputs.more_zram }}
       use_kpm: ${{ inputs.use_kpm }}
       use_O2: ${{ inputs.use_O2 || false }}
       supp_op: ${{ inputs.supp_op || false }}
