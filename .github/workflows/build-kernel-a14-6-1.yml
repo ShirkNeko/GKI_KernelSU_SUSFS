@@ -37,7 +37,7 @@ on:
         type: string
         default: "Tue Jun 10 18:59:08 UTC 2025"
       lz4_upd:
-        description: "LZ4算法更新?"
+        description: "升级LZ4算法至1.10.0?"
         required: true
         type: boolean
         default: true
