@@ -419,7 +419,6 @@ jobs:
           
       - name: 升级到LZ4 1.10.0
         if: ${{ inputs.use_zram }}
-        working-directory: kernel
         run: |
           echo "--- LZ4 1.10.0 Upgrade ---" | tee -a ../error-log.txt
           echo "Upgrading LZ4 to version 1.10.0..." | tee -a ../error-log.txt
