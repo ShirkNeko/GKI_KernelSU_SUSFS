@@ -47,7 +47,7 @@ on:
         required: true
         type: boolean
         default: true
-       rekernel_enable:
+      rekernel_enable:
         description: '添加 Re-Kernel 支持?'
         required: true
         type: boolean
