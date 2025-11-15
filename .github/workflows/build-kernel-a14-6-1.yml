@@ -25,7 +25,7 @@ on:
           - "Stable(标准)"
           - "Dev(开发)"
           - "Other(其他/指定)"
-        default: "Dev(开发)"
+        default: "Stable(标准)"
       version:
         description: "自定义版本名(如6.1.93后面的字符/留空则使用默认版本号)"
         required: true
