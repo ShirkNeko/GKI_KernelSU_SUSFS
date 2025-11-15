@@ -42,9 +42,9 @@ on:
         type: boolean
         default: true
       use_kpm:
-        required: true
+        required: false
         type: boolean
-        default: true
+        default: false
       use_O2:
         required: true
         type: boolean
@@ -56,7 +56,14 @@ on:
       BBG:
         required: true
         type: boolean
-        default: false
+        default: true
+      set_defbbr:
+        required: true
+        type: boolean
+        default: true
+      build_time:
+        required: false
+        type: string
 jobs:
   build-kernel-kernelsu-susfs:
     runs-on: ubuntu-latest
