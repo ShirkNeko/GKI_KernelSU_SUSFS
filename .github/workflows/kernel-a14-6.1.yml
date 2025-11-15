@@ -112,7 +112,7 @@ jobs:
       os_patch_level: ${{ matrix.os_patch_level }}
       kernelsu_variant: ${{ inputs.kernelsu_variant || 'Next' }}
       kernelsu_branch: ${{ inputs.kernelsu_branch || 'Dev' }}
-      version: ${{ inputs.version || '' }}
+      version: ${{ inputs.version }}
       lz4_upd: ${{ inputs.lz4_upd }}
       more_zram_kpm: ${{ inputs.more_zram }}
       use_O2: ${{ inputs.use_O2 || false }}
@@ -120,4 +120,4 @@ jobs:
       BBG: ${{ inputs.BBG }}
       set_defbbr: ${{ inputs.set_defbbr }}
       rekernel_enable: ${{ inputs.rekernel_enable }}
-      build_time: ${{ inputs.build_time || '' }}
+      build_time: ${{ inputs.build_time }}
