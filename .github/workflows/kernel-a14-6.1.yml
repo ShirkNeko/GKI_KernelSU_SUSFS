@@ -24,9 +24,9 @@ on:
         default: "-android14-11-gca0ef6d17716-ab13624819"
       use_zram:
         description: '是否开启增加更多ZRAM算法?'
-        required: true
+        required: false
         type: boolean
-        default: true
+        default: false
       use_kpm:
         description: '是否开启KPM功能?'
         required: false
