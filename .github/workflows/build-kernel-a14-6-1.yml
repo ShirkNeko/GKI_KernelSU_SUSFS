@@ -38,9 +38,9 @@ on:
         default: "Tue Jun 10 18:59:08 UTC 2025"
       use_zram:
         description: '是否开启增加更多ZRAM算法?'
-        required: true
+        required: false
         type: boolean
-        default: true
+        default: false
       use_kpm:
         description: '是否开启KPM功能?'
         required: false
