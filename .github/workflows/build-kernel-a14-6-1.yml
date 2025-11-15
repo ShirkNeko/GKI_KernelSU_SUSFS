@@ -41,9 +41,9 @@ on:
         default: true
       use_kpm:
         description: '是否开启KPM功能?'
-        required: true
+        required: false
         type: boolean
-        default: true
+        default: false
       use_O2:
         description: '是否开启O2编译优化?'
         required: true
@@ -51,9 +51,9 @@ on:
         default: true
       get_manager:
         description: '是否同时获取最新KSU管理器?（实验性功能，报错请关闭）'
-        required: true
+        required: false
         type: boolean
-        default: true
+        default: false
       BBG:
         description: '是否启用内核层面阻止对关键分区/设备节点的非法写入(LSM)？'
         required: true
