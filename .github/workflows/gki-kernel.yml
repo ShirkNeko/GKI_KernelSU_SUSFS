@@ -406,14 +406,14 @@ jobs:
             patch -p1 -F 3 < scope_min_manual_hooks_v1.6.patch
           fi
           
-      - name: 升级LZ4至1.10.0
+      - name: 升级LZ4算法至1.10.0
         if: ${{ inputs.use_zram }}
         run: |
 
           echo "更改为配置目录: $CONFIG..."
           cd "$CONFIG/common"
-          echo 'lz升级'
-          # 删除lz4库旧有文件
+          echo 'LZ4算法升级'
+          # 删除LZ4库旧有文件
           files=(
               "lib/lz4/lz4_compress.c"
               "lib/lz4/lz4_decompress.c"
