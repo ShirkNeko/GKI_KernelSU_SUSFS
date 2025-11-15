@@ -404,6 +404,63 @@ jobs:
             patch -p1 -F 3 < scope_min_manual_hooks_v1.6.patch
           fi
 
+      - name: Clone additional repositories for LZ4 upgrade
+        run: |
+          echo "Verifying LZ4 patches repository..." | tee -a error-log.txt
+          if [ -d "zzh_patches" ]; then
+            echo "✓ LZ4 patches repository already available" | tee -a error-log.txt
+          else
+            echo "✗ ERROR: LZ4 patches repository missing!" | tee -a error-log.txt
+            exit 1
+          fi
+          echo "" >> error-log.txt
+          
+      - name: Upgrade LZ4 to version 1.10.0
+        if: ${{ github.event.inputs.enable_zram == 'true' }}
+        working-directory: kernel
+        run: |
+          echo "--- LZ4 1.10.0 Upgrade ---" | tee -a ../error-log.txt
+          echo "Upgrading LZ4 to version 1.10.0..." | tee -a ../error-log.txt
+          
+          files=(
+              "lib/lz4/lz4_compress.c"
+              "lib/lz4/lz4_decompress.c"
+              "lib/lz4/lz4defs.h"
+              "lib/lz4/lz4hc_compress.c"
+          )
+          
+          for file in "${files[@]}"; do
+              if [ -e "$file" ]; then
+                  rm "$file"
+                  echo "  Removed: $file" | tee -a ../error-log.txt
+              else
+                  echo "  ⚠ File not found (skipping): $file" | tee -a ../error-log.txt
+              fi
+          done
+          
+          cp -r ../zzh_patches/zram/lz4/* ./lib/lz4/ 2>&1 | tee -a ../error-log.txt
+          cp -r ../zzh_patches/zram/include/linux/* ./include/linux/ 2>&1 | tee -a ../error-log.txt
+          
+          if [ -f "../zzh_patches/zram/${{ env.KERNEL_VERSION }}/lz4_1.10.0.patch" ]; then
+            cp ../zzh_patches/zram/${{ env.KERNEL_VERSION }}/lz4_1.10.0.patch ./
+            echo "Applying LZ4 1.10.0 patch..." | tee -a ../error-log.txt
+            if patch -p1 -F 3 --fuzz=5 < lz4_1.10.0.patch 2>&1 | tee -a ../error-log.txt; then
+              echo "✓ LZ4 1.10.0 patch applied successfully" | tee -a ../error-log.txt
+            else
+              echo "⚠ LZ4 1.10.0 patch had issues (continuing)" | tee -a ../error-log.txt
+            fi
+          else
+            echo "⚠ LZ4 1.10.0 patch not found for kernel ${{ env.KERNEL_VERSION }}" | tee -a ../error-log.txt
+          fi
+          
+          if [ -f "fs/f2fs/Makefile" ]; then
+              if ! grep -qF "f2fs-\$(CONFIG_F2FS_IOSTAT) += iostat.o" "fs/f2fs/Makefile"; then
+                  echo "f2fs-\$(CONFIG_F2FS_IOSTAT) += iostat.o" >> "fs/f2fs/Makefile"
+                  echo "✓ Added F2FS iostat configuration" | tee -a ../error-log.txt
+              fi
+          fi
+          echo "" >> ../error-log.txt
+          
       - name: 复制源文件 & 应用LZ4KD & ZSTDN补丁
         if: ${{ inputs.use_zram }}
         run: |
