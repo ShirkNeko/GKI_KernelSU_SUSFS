@@ -172,7 +172,7 @@ jobs:
           # Sukisu的补丁仓库
           git clone https://github.com/ShirkNeko/SukiSU_patch.git
           # LZ4升级的补丁仓库
-          git clone https://github.com/zzh20188/GKI_KernelSU_SUSFS.git zzh_patches
+          git clone --depth=1 https://github.com/zzh20188/GKI_KernelSU_SUSFS.git zzh_patches
           
       - name: 设置 CONFIG 环境变量
         run: |
