@@ -38,9 +38,9 @@ on:
         required: false
         type: string
       use_zram:
-        required: true
+        required: false
         type: boolean
-        default: true
+        default: false
       use_kpm:
         required: false
         type: boolean
