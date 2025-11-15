@@ -418,7 +418,7 @@ jobs:
           echo "" >> error-log.txt
           
       - name: 升级到LZ4 1.10.0
-        if: ${{ github.event.inputs.enable_zram == 'true' }}
+        if: ${{ inputs.use_zram }}
         working-directory: kernel
         run: |
           echo "--- LZ4 1.10.0 Upgrade ---" | tee -a ../error-log.txt
