@@ -28,8 +28,9 @@ on:
         default: Dev(开发)
       version:
         description: '自定义版本名(如6.1.93后面的字符/留空则使用默认版本号)'
-        required: false
+        required: true
         type: string
+        default: "-android14-11-gca0ef6d17716-ab13624819"
       build_time:
         description: '设置内核构建时间(格式见仓库说明)'
         required: false
