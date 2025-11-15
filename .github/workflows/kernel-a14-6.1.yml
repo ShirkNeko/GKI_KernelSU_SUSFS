@@ -22,6 +22,11 @@ on:
         required: true
         type: string
         default: "-android14-11-gca0ef6d17716-ab13624819"
+      lz4_upd:
+        description: 'LZ4算法更新?'
+        required: true
+        type: boolean
+        default: true
       more_zram:
         description: '是否开启增加更多ZRAM算法?'
         required: true
@@ -113,6 +118,7 @@ jobs:
       kernelsu_variant: ${{ inputs.kernelsu_variant || 'Next' }}
       kernelsu_branch: ${{ inputs.kernelsu_branch || 'Dev' }}
       version: ${{ inputs.version || '' }}
+      lz4_upd: ${{ inputs.lz4_upd }}
       more_zram: ${{ inputs.more_zram }}
       use_kpm: ${{ inputs.use_kpm }}
       use_O2: ${{ inputs.use_O2 || false }}
