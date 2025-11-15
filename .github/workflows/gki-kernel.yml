@@ -41,11 +41,7 @@ on:
         required: true
         type: boolean
         default: true
-      more_zram:
-        required: false
-        type: boolean
-        default: false
-      use_kpm:
+      more_zram_kpm:
         required: false
         type: boolean
         default: false
@@ -465,7 +461,7 @@ jobs:
           fi
           
       - name: 复制源文件 & 应用LZ4KD & ZSTDN补丁
-        if: ${{ inputs.more_zram }}
+        if: ${{ inputs.more_zram_kpm }}
         run: |
           echo "更改为配置目录: $CONFIG..."
           cd "$CONFIG/common"
@@ -498,7 +494,7 @@ jobs:
           fi
 
       - name: LZ4KD & Lz4k_oplus配置
-        if: ${{ inputs.more_zram }}
+        if: ${{ inputs.more_zram_kpm }}
         run: |
           set -x
           set -e
@@ -696,7 +692,7 @@ jobs:
             ccache --show-stats
             
       - name: 修补 Image 文件 安卓12和安卓13(仅限sukisu)
-        if: ${{ inputs.use_kpm && inputs.kernelsu_variant == 'SukiSU' && (inputs.android_version == 'android12' || inputs.android_version == 'android13') }}
+        if: ${{ inputs.more_zram_kpm && inputs.kernelsu_variant == 'SukiSU' && (inputs.android_version == 'android12' || inputs.android_version == 'android13') }}
         run: |
           if [ "${{ inputs.kernel_version }}" != "6.6" ]; then
             echo "Patching Image file..."
@@ -710,7 +706,7 @@ jobs:
           fi
 
       - name: 修补 Image 文件 安卓14和安卓15(仅限sukisu)
-        if: ${{ inputs.use_kpm && inputs.kernelsu_variant == 'SukiSU' && (inputs.android_version == 'android14' || inputs.android_version == 'android15') }}
+        if: ${{ inputs.more_zram_kpm && inputs.kernelsu_variant == 'SukiSU' && (inputs.android_version == 'android14' || inputs.android_version == 'android15') }}
         run: |
           if [ "${{ inputs.kernel_version }}" != "6.6" ]; then
             echo "Patching Image file..."
