@@ -463,7 +463,7 @@ jobs:
           set -x
           set -e
           echo "使用LZ4作为默认ZRAM算法"
-          CONFIG_FILE="$CONFIG/common/arch/arm64/configs/gki_defconfig"
+          CONFIG_FILE="arch/arm64/configs/gki_defconfig"
           echo "CONFIG_ZRAM_DEF_COMP_LZ4=y" >> "$CONFIG_FILE"
           
       - name: 复制源文件 & 应用LZ4KD & ZSTDN补丁
