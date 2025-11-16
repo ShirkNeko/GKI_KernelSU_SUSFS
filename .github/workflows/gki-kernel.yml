@@ -41,14 +41,6 @@ on:
         required: true
         type: boolean
         default: true
-      more_zram_kpm:
-        required: false
-        type: boolean
-        default: false
-      use_O2:
-        required: true
-        type: boolean
-        default: true
       supp_op:
         required: true
         type: boolean
@@ -68,6 +60,14 @@ on:
       build_time:
         required: true
         type: string
+      use_O2:
+        required: true
+        type: boolean
+        default: true
+      more_zram_kpm:
+        required: false
+        type: boolean
+        default: false
 jobs:
   build-kernel-kernelsu-susfs:
     runs-on: ubuntu-latest
