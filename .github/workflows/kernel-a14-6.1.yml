@@ -38,7 +38,7 @@ on:
         type: boolean
         default: true
       BBG:
-        description: '是否启用内核层面阻止对关键分区/设备节点的非法写入(LSM)？'
+        description: '是否启用BBG防格机补丁？'
         required: true
         type: boolean
         default: true
