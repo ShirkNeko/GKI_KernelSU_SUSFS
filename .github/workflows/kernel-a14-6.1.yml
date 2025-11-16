@@ -27,16 +27,6 @@ on:
         required: true
         type: boolean
         default: true
-      more_zram_kpm:
-        description: '启用更多ZRAM算法和KPM功能?'
-        required: false
-        type: boolean
-        default: false
-      use_O2:
-        description: '是否开启O2编译优化?'
-        required: true
-        type: boolean
-        default: true
       BBG:
         description: '是否启用BBG防格机补丁？'
         required: true
@@ -57,6 +47,16 @@ on:
         required: true
         type: string
         default: "Tue Jun 10 18:59:08 UTC 2025"
+      use_O2:
+        description: '是否开启O2编译优化?'
+        required: true
+        type: boolean
+        default: true
+      more_zram_kpm:
+        description: '启用更多ZRAM算法和KPM功能?'
+        required: false
+        type: boolean
+        default: false
         
 jobs:
   build-kernel-a14-6-1-kernelsu-susfs:
@@ -114,10 +114,10 @@ jobs:
       kernelsu_branch: ${{ inputs.kernelsu_branch || 'Dev' }}
       version: ${{ inputs.version }}
       lz4_upd: ${{ inputs.lz4_upd }}
-      more_zram_kpm: ${{ inputs.more_zram_kpm }}
-      use_O2: ${{ inputs.use_O2 || false }}
       supp_op: ${{ inputs.supp_op || false }}
       BBG: ${{ inputs.BBG }}
       set_defbbr: ${{ inputs.set_defbbr }}
       rekernel_enable: ${{ inputs.rekernel_enable }}
       build_time: ${{ inputs.build_time }}
+      use_O2: ${{ inputs.use_O2 || false }}
+      more_zram_kpm: ${{ inputs.more_zram_kpm }}
