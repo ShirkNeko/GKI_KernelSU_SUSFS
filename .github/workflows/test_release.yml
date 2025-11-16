@@ -255,7 +255,7 @@ jobs:
         
         Features:
         -> ${{ inputs.kernelsu_variant == 'Next' && 'KernelSU-' || '' }}${{ inputs.kernelsu_variant }}-${{ inputs.kernelsu_branch }}
-        -> SUSFS ඞ v1.5.12
+        -> SUSFS ඞ v2.0.0
         -> Manual Syscall Hooks for better hiding
         -> Magic Mount Support
         -> Simple hiding for LineageOS detection
@@ -300,7 +300,7 @@ jobs:
         run: |
           set -e
 
-          BASE_VERSION="v1.5.12"
+          BASE_VERSION="v2.0.0"
           
           # Fetch all existing tags using git ls-remote
           EXISTING_TAGS=$(git ls-remote --tags https://github.com/$REPO_OWNER/$REPO_NAME.git | awk '{print $2}' | sed 's/refs\/tags\///' || true)
@@ -352,7 +352,7 @@ jobs:
             echo "Next version: $KSU_VERSION"
             cd ..
             rm -rf ksu-next-tmp
-            echo "RELEASE_NAME=\"GKI Kernel: KernelSU-Next ($KSU_VERSION) & SUSFS v1.5.12\"" >> $GITHUB_ENV
+            echo "RELEASE_NAME=\"GKI Kernel: KernelSU-Next ($KSU_VERSION) & SUSFS v2.0.0\"" >> $GITHUB_ENV
             
           elif [ "${{ inputs.kernelsu_variant }}" = "SukiSU" ]; then
             echo "Processing SukiSU variant"
@@ -363,11 +363,11 @@ jobs:
             echo "SukiSU version: $KSU_VERSION"
             cd ..
             rm -rf suki-tmp
-            echo "RELEASE_NAME=\"GKI Kernel: SukiSU ($KSU_VERSION) & SUSFS v1.5.12\"" >> $GITHUB_ENV
+            echo "RELEASE_NAME=\"GKI Kernel: SukiSU ($KSU_VERSION) & SUSFS v2.0.0\"" >> $GITHUB_ENV
             
           else
             echo "Using default naming for variant: ${{ inputs.kernelsu_variant }}"
-            echo "RELEASE_NAME=\"GKI Kernel: ${{ inputs.kernelsu_variant }} & SUSFS v1.5.12\"" >> $GITHUB_ENV
+            echo "RELEASE_NAME=\"GKI Kernel: ${{ inputs.kernelsu_variant }} & SUSFS v2.0.0\"" >> $GITHUB_ENV
           fi
           
       - name: Fetch KSU and SUSFS Commit Info
