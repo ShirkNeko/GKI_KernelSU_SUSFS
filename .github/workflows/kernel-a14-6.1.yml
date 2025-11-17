@@ -17,7 +17,7 @@ on:
       kernelsu_branch:
         required: true
         type: string
-        default: Stable
+        default: Dev
       version:
         required: true
         type: string
