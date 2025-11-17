@@ -765,7 +765,7 @@ jobs:
           cd ./AnyKernel3
 
           # Create and upload zip for each format
-          ZIP_NAME="${{ inputs.android_version }}-${{ inputs.kernel_version }}.${{ inputs.sub_level }}-${{ inputs.os_patch_level }}-$(date +%Y%m%d)-AnyKernel3.zip"
+          ZIP_NAME="${{ inputs.android_version }}-${{ inputs.kernel_version }}.${{ inputs.sub_level }}-${{ inputs.os_patch_level }}-AnyKernel3.zip"
           echo "Creating zip file: $ZIP_NAME..."
           mv ../Image ./Image
           zip -r "../$ZIP_NAME" ./*
@@ -846,5 +846,5 @@ jobs:
       - name: 上传编译资产
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ inputs.kernelsu_variant }}_kernel-${{ env.CONFIG }}-Anykernel3
+          name: ${{ inputs.kernelsu_variant }}-${{ env.CONFIG }}-$(date +%Y%m%d)-AK3
           path: ./AnyKernel3/*
