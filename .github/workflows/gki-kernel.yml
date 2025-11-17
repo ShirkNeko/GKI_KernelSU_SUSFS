@@ -851,5 +851,5 @@ jobs:
       - name: 上传编译资产
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ inputs.kernelsu_variant }}-${{ inputs.android_version }}-${{ inputs.kernel_version }}.${{ inputs.sub_level }}-AK3
+          name: ${{ inputs.kernelsu_variant }}-${{ inputs.android_version }}-${{ inputs.kernel_version }}.${{ inputs.sub_level }}-${{ steps.date.outputs.date }}-AK3
           path: ./AnyKernel3/*
