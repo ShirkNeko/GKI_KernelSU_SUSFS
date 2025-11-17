@@ -843,13 +843,30 @@ jobs:
           $AVBTOOL add_hash_footer --partition_name boot --partition_size $((64 * 1024 * 1024)) --image boot-lz4.img --algorithm SHA256_RSA2048 --key $BOOT_SIGN_KEY_PATH
           cp ./boot-lz4.img ../${{ inputs.android_version }}-${{ inputs.kernel_version }}.${{ inputs.sub_level }}-${{ inputs.os_patch_level }}-boot-lz4.img
 
-      - name: 设置北京时间
-        id: date
-        run: echo "date=$(TZ='Asia/Shanghai' date +'%Y%m%d')" >> $GITHUB_OUTPUT
-        shell: bash
+      - name: 获取 KSU 版本号
+        run: |
+          if [ "${{ inputs.kernelsu_variant }}" == "Next" ]; then
+            echo "This is the Next variant"
+            git clone https://github.com/KernelSU-Next/KernelSU-Next.git
+            cd KernelSU-Next
+            KSU_GIT_VERSION=$(git rev-list --count HEAD)
+            KSU_VERSION=$((10000 + KSU_GIT_VERSION + 200))
+            echo $KSU_VERSION
+            echo "KSU_VERSION=$KSU_VERSION" >> $GITHUB_ENV
+          elif [ "${{ inputs.kernelsu_variant }}" == "SukiSU" ]; then
+            echo "This is the SukiSU variant"
+            git clone https://github.com/SukiSU-Ultra/SukiSU-Ultra.git
+            cd SukiSU-Ultra
+            KSU_GIT_VERSION=$(git rev-list --count HEAD)
+            KSU_VERSION=$((10000 + KSU_GIT_VERSION + 700))
+            echo $KSU_VERSION
+            echo "KSU_VERSION=$KSU_VERSION" >> $GITHUB_ENV
+          else
+            echo "Unknown variant"
+          fi
   
       - name: 上传编译资产
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ inputs.kernelsu_variant }}-${{ inputs.android_version }}-${{ inputs.kernel_version }}.${{ inputs.sub_level }}-${{ steps.date.outputs.date }}-AK3
+          name: ${{ inputs.kernelsu_variant }}-${{ inputs.android_version }}-${{ inputs.kernel_version }}.${{ inputs.sub_level }}-${{ env.KSU_VERSION }}-AK3
           path: ./AnyKernel3/*
