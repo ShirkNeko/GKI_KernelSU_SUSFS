@@ -845,7 +845,7 @@ jobs:
 
       - name: 设置北京时间
         id: date
-        run: echo "date=$(TZ='Asia/Shanghai' date +'%Y%m%d')" >> $GITHUB_OUTPUT
+        run: echo "date=$(TZ='Asia/Shanghai' date +'%y%m%d')" >> $GITHUB_OUTPUT
         shell: bash
         
       - name: 上传编译资产
