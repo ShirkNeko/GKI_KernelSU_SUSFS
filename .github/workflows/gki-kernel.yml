@@ -619,7 +619,7 @@ jobs:
             sed -i '$s|echo "\$res"|echo "${{ inputs.version }}"|' ./common/scripts/setlocalversion
           else
             echo "版本号为空，使用默认值"
-            sed -i '$s|echo "\$res"|echo "\$res-zakozakoooooo-1145141919"|' ./common/scripts/setlocalversion
+            sed -i '$s|echo "\$res"|echo "\$res-unknown"|' ./common/scripts/setlocalversion
           fi
 
           # 如果你需要改构建时间,请把以下变量 CURRENT_TIME 修改为如下例子字符串,如:CURRENT_TIME="Sat Jun 07 06:29:29 UTC 2025"
