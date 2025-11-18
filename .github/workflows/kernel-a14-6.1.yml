@@ -114,7 +114,6 @@ jobs:
       kernelsu_branch: ${{ inputs.kernelsu_branch || 'Dev' }}
       version: ${{ inputs.version }}
       lz4_upd: ${{ inputs.lz4_upd }}
-      supp_op: ${{ inputs.supp_op || false }}
       BBG: ${{ inputs.BBG }}
       set_defbbr: ${{ inputs.set_defbbr }}
       rekernel_enable: ${{ inputs.rekernel_enable }}
