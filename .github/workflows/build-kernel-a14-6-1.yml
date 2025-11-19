@@ -52,7 +52,7 @@ on:
         type: boolean
         default: true
       ssg_rekernel_enable:
-        description: "添加Re:Kernel支持?"
+        description: "启用三星SSG IO调度器及添加Re:Kernel支持?"
         required: true
         type: boolean
         default: true
