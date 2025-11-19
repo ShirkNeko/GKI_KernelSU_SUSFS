@@ -262,7 +262,7 @@ jobs:
           fi
 
       - name: 启用三星SSG IO调度器
-         if: ${{ inputs.ssg_rekernel_enable }}
+        if: ${{ inputs.ssg_rekernel_enable }}
         run: |
             echo "正在启用三星SSG IO调度器(极少数机型开启后可能不开机,若出现bug请关闭此项)…"
             cd "$CONFIG"
