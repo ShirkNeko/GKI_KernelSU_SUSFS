@@ -49,7 +49,7 @@ on:
         required: true
         type: boolean
         default: true
-      rekernel_enable:
+      ssg_rekernel_enable:
         required: true
         type: boolean
         default: true
@@ -261,8 +261,16 @@ jobs:
             curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh" | bash $BRANCH
           fi
 
+      - name: 启用三星SSG IO调度器
+         if: ${{ inputs.ssg_rekernel_enable }}
+        run: |
+            echo "正在启用三星SSG IO调度器(极少数机型开启后可能不开机,若出现bug请关闭此项)…"
+            cd "$CONFIG"
+            echo "CONFIG_MQ_IOSCHED_SSG=y" >> ./common/arch/arm64/configs/gki_defconfig
+            echo "CONFIG_MQ_IOSCHED_SSG_CGROUP=y" >> ./common/arch/arm64/configs/gki_defconfig
+          
       - name: 添加 Re:Kernel 支持
-        if: ${{ inputs.rekernel_enable }}
+        if: ${{ inputs.ssg_rekernel_enable }}
         run: |
             echo "正在启用Re:Kernel支持(用于与NoActive,Freezer等软件配合使用,提升冻结后台能力)…"
             cd "$CONFIG"
