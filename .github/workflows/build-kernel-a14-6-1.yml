@@ -51,7 +51,7 @@ on:
         required: true
         type: boolean
         default: true
-      rekernel_enable:
+      ssg_rekernel_enable:
         description: "添加Re:Kernel支持?"
         required: true
         type: boolean
@@ -79,7 +79,7 @@ jobs:
       lz4_upd: ${{ inputs.lz4_upd }}
       BBG: ${{ inputs.BBG }}
       set_defbbr: ${{ inputs.set_defbbr }}
-      rekernel_enable: ${{ inputs.rekernel_enable }}
+      ssg_rekernel_enable: ${{ inputs.ssg_rekernel_enable }}
       build_time: ${{ inputs.build_time }}
       use_O2: ${{ inputs.use_O2 }}
       more_zram_kpm: ${{ inputs.more_zram_kpm }}
