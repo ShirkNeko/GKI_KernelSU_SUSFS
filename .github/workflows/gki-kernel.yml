@@ -849,9 +849,27 @@ jobs:
           else
             echo "Unknown variant"
           fi
-        
+
+          # 简化Android系统版本号
+          if [ "${{ inputs.android_version }}" == "android12" ]; then
+            A_VERSION="A12"
+            echo "A_VERSION=$A_VERSION" >> $GITHUB_ENV
+          elif [ "${{ inputs.android_version }}" == "android13" ]; then
+            A_VERSION="A13"
+            echo "A_VERSION=$A_VERSION" >> $GITHUB_ENV
+          elif [ "${{ inputs.android_version }}" == "android14" ]; then
+            A_VERSION="A14"
+            echo "A_VERSION=$A_VERSION" >> $GITHUB_ENV
+          elif [ "${{ inputs.android_version }}" == "android15" ]; then
+            A_VERSION="A15"
+            echo "A_VERSION=$A_VERSION" >> $GITHUB_ENV
+          else
+            A_VERSION="${{ inputs.android_version }}"
+            echo "A_VERSION=$A_VERSION" >> $GITHUB_ENV
+          fi
+          
       - name: 上传编译资产
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ inputs.kernelsu_variant }}(${{ env.KSU_VERSION }})-${{ inputs.android_version }}-${{ inputs.kernel_version }}.${{ inputs.sub_level }}
+          name: ${{ inputs.kernelsu_variant }}(${{ env.KSU_VERSION }})-${{ env.A_VERSION }}-${{ inputs.kernel_version }}.${{ inputs.sub_level }}
           path: ./AnyKernel3/*
