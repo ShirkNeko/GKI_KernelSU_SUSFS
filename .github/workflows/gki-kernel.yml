@@ -37,7 +37,7 @@ on:
       version:
         required: false
         type: string
-      lz4_zstd_upd:
+      lz4_upd:
         required: true
         type: boolean
         default: true
@@ -173,8 +173,6 @@ jobs:
           git clone https://github.com/ShirkNeko/SukiSU_patch.git
           # LZ4 1.10.0的补丁仓库
           git clone https://github.com/zzh20188/GKI_KernelSU_SUSFS.git zzh_patch
-          # 下载ZSTD 1.5.7补丁
-          wget -P zzh_patch/zram/${{ inputs.kernel_version }}/ https://raw.githubusercontent.com/cctv18/oppo_oplus_realme_sm8650/refs/heads/main/zram_patch/002-zstd.patch
           
       - name: 设置 CONFIG 环境变量
         run: |
@@ -399,14 +397,14 @@ jobs:
             echo "Applying hooks for SukiSU..."
           fi
           
-      - name: 应用LZ4 1.10.0 & ZSTD 1.5.7补丁
-        if: ${{ inputs.lz4_zstd_upd }}
+      - name: 升级LZ4算法至1.10.0
+        if: ${{ inputs.lz4_upd }}
         run: |
 
           echo "更改为配置目录: $CONFIG..."
           cd "$CONFIG/common"
-          echo 'LZ4 & ZSTD算法升级'
-          # 删除LZ4 & ZSTD库旧有文件
+          echo 'LZ4算法升级'
+          # 删除LZ4库旧有文件
           files=(
               "lib/lz4/lz4_compress.c"
               "lib/lz4/lz4_decompress.c"
@@ -426,11 +424,9 @@ jobs:
           cp -r ../../zzh_patch/zram/lz4/* ./lib/lz4/
           cp -r ../../zzh_patch/zram/include/linux/* ./include/linux/
           cp -r ../../zzh_patch/zram/${{ inputs.kernel_version }}/lz4_1.10.0.patch ./
-          cp -r ../../zzh_patch/zram/${{ inputs.kernel_version }}/002-zstd.patch ./
-          
+
           patch -p1 -F 3 --fuzz=5 < lz4_1.10.0.patch || true
-          patch -p1 -F 3 --fuzz=5 < 002-zstd.patch || true
-          
+
           # 检查文件是否存在
           if [ -f "fs/f2fs/Makefile" ]; then
               # 检查是否包含指定行
