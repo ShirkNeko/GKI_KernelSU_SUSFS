@@ -412,9 +412,6 @@ jobs:
               "lib/lz4/lz4_decompress.c"
               "lib/lz4/lz4defs.h"
               "lib/lz4/lz4hc_compress.c"
-              "lib/zstd/decompress_sources.h"
-              "lib/zstd/zstd_compress_module.c"
-              "lib/zstd/zstd_decompress_module.c"
           )
 
           for file in "${files[@]}"; do
