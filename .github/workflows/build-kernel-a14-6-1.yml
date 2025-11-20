@@ -36,8 +36,8 @@ on:
         required: true
         type: string
         default: "Tue Jun 10 18:59:08 UTC 2025"
-      lz4_upd:
-        description: "升级LZ4算法至1.10.0?"
+      lz4_zstd_upd:
+        description: "应用LZ4 1.10.0 & ZSTD 1.5.7补丁?"
         required: true
         type: boolean
         default: true
@@ -76,7 +76,7 @@ jobs:
       kernelsu_variant: ${{ inputs.kernelsu_variant }}
       kernelsu_branch: ${{ inputs.kernelsu_branch }}
       version: ${{ inputs.version }}
-      lz4_upd: ${{ inputs.lz4_upd }}
+      lz4_zstd_upd: ${{ inputs.lz4_zstd_upd }}
       BBG: ${{ inputs.BBG }}
       set_defbbr: ${{ inputs.set_defbbr }}
       rekernel_enable: ${{ inputs.rekernel_enable }}
