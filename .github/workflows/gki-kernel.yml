@@ -850,7 +850,7 @@ jobs:
             echo "Unknown variant"
           fi
 
-          # 简化Android系统版本号
+          # 简化Android版本名
           if [ "${{ inputs.android_version }}" == "android12" ]; then
             A_VERSION="A12"
             echo "A_VERSION=$A_VERSION" >> $GITHUB_ENV
