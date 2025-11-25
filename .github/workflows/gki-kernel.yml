@@ -439,6 +439,48 @@ jobs:
           else
               echo "文件不存在: fs/f2fs/Makefile"
           fi
+
+      - name: 克隆性能补丁仓库
+        run: |
+          echo "=== 克隆性能补丁仓库 ==="
+          git clone https://github.com/WildKernels/kernel_patches.git --depth=1
+          ls -la kernel_patches/common/ || echo "Failed to clone kernel_patches"
+      
+      - name: 应用性能优化补丁
+        run: |
+          echo "=== 应用性能优化补丁 ==="
+          cd "$CONFIG/common"
+          MIN_VERSION="5.16"
+          
+          # 1. 优化内存操作
+          cp ../../kernel_patches/common/optimized_mem_operations.patch ./
+          patch -p1 --forward < optimized_mem_operations.patch || true
+          echo "[OK] Applied optimized_mem_operations.patch"
+          
+          # 2. 文件结构体 8 字节对齐
+          cp ../../kernel_patches/common/file_struct_8bytes_align.patch ./
+          patch -p1 --forward < file_struct_8bytes_align.patch || true
+          echo "[OK] Applied file_struct_8bytes_align.patch"
+          
+          # 3. 降低缓存压力
+          cp ../../kernel_patches/common/reduce_cache_pressure.patch ./
+          patch -p1 --forward < reduce_cache_pressure.patch || true
+          echo "[OK] Applied reduce_cache_pressure.patch"
+          
+          # 4. 清除页面 16 字节对齐（内核版本检测）
+          CURRENT_VERSION="${{ inputs.kernel_version }}"
+          if [ "$(printf '%s\n' "$CURRENT_VERSION" "$MIN_VERSION" | sort -V | head -n1)" = "$CURRENT_VERSION" ]; then
+            echo "Kernel $CURRENT_VERSION < $MIN_VERSION, using original patch"
+            cp ../../kernel_patches/common/clear_page_16bytes_align.patch ./
+            patch -p1 --forward < clear_page_16bytes_align.patch || true
+            echo "[OK] Applied clear_page_16bytes_align.patch"
+          else
+            echo "Kernel $CURRENT_VERSION >= $MIN_VERSION, using __pi variant"
+            cp ../../kernel_patches/common/clear_page_16bytes_align.patch ./
+            sed -e 's/SYM_FUNC_START_PI(clear_page)/SYM_FUNC_START_PI(__pi_clear_page)/' clear_page_16bytes_align.patch > clear_page_16bytes_align__pi.patch
+            patch -p1 -F3 --forward < clear_page_16bytes_align__pi.patch || true
+            echo "[OK] Applied clear_page_16bytes_align__pi.patch"
+          fi
           
       - name: 复制源文件 & 应用LZ4KD & ZSTDN补丁
         if: ${{ inputs.more_zram_kpm }}
