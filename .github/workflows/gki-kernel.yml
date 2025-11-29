@@ -4,6 +4,9 @@ permissions:
   actions: write   # Allows triggering actions
 
 on:
+  schedule:
+    - cron: '17 20 * * *'  # 每两天执行一次
+  workflow_dispatch:     # 允许手动触发
   workflow_call: # This allows this workflow to be called from another workflow
     inputs:
       make_release:
