@@ -688,9 +688,8 @@ jobs:
         if: ${{ inputs.use_O2 }}
         run: |
           cd "$CONFIG"
-          echo "启用 O2 编译优化..."
-          echo "CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE=y" >> ./common/arch/arm64/configs/gki_defconfig
-          echo "CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE_O3=n" >> ./common/arch/arm64/configs/gki_defconfig
+          echo "启用 O3 编译优化..."
+          echo "CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE_O3=y" >> ./common/arch/arm64/configs/gki_defconfig
 
           echo "启用 Thin LTO 优化..."
           echo "CONFIG_LTO=y" >> ./common/arch/arm64/configs/gki_defconfig
