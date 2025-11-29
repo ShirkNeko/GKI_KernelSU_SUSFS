@@ -1,4 +1,4 @@
-name: 编译内核a15-6-6
+name: 编译内核A15-6.6
 
 permissions:
   contents: write  # Allow writing to repository contents (for pushing tags)
