@@ -10,3 +10,15 @@ updates:
     directory: "/"
     schedule:
       interval: "daily"
+
+  # Enable version updates for AdityaGarg8
+  - package-ecosystem: "AdityaGarg8"
+    directory: "/"
+    schedule:
+      interval: "daily"
+
+  # Enable version updates for nick-fields
+  - package-ecosystem: "nick-fields"
+    directory: "/"
+    schedule:
+      interval: "daily"
