@@ -6,7 +6,7 @@ permissions:
   
 on:
   schedule:
-    - cron: '*/5 * * * *'  # 每两天执行一次
+    - cron: '0 0,12 * * *'  # 每天8:00、20:00执行(GMT+8)
   workflow_dispatch:
     inputs:
       kernelsu_variant:
