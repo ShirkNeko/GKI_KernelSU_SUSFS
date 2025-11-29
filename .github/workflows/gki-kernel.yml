@@ -56,7 +56,7 @@ on:
       build_time:
         required: true
         type: string
-      use_O2:
+      use_O3:
         required: true
         type: boolean
         default: true
@@ -685,7 +685,7 @@ jobs:
           fi
 
       - name: 编译优化
-        if: ${{ inputs.use_O2 }}
+        if: ${{ inputs.use_O3 }}
         run: |
           cd "$CONFIG"
           echo "启用 O3 编译优化..."
