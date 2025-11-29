@@ -5,14 +5,8 @@
 
 version: 2
 updates:
-  # Enable version updates for cache
-  - package-ecosystem: "cache"
-    directory: "/"
-    schedule:
-      interval: "daily"
-
-  # Enable version updates for upload-artifact
-  - package-ecosystem: "upload-artifact"
+  # Enable version updates for github-actions
+  - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "daily"
