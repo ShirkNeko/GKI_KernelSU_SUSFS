@@ -5,7 +5,7 @@ permissions:
 
 on:
   schedule:
-    - cron: '19 12 * * *'  # 每两天执行一次
+    - cron: '*/5 * * * *'  # 每两天执行一次
   workflow_dispatch:     # 允许手动触发
   workflow_call: # This allows this workflow to be called from another workflow
     inputs:
