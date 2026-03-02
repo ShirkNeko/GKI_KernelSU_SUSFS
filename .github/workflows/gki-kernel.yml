@@ -346,49 +346,81 @@ jobs:
       - name: 一些修复补丁
         run: |
           cd "$CONFIG/common"
-          FORMATTED_BRANCH="${{ inputs.android_version }}-${{ inputs.kernel_version }}"
-          # Fake Patch to fix failures
-          fake_patched=0
-          if [ "$FORMATTED_BRANCH" = "android15-6.6" ]; then
-            if ! grep -qxF $'\tunsigned int nr_subpages = __PAGE_SIZE / PAGE_SIZE;' ./fs/proc/task_mmu.c; then
-              echo "未找到 nr_subpages,正在进行补丁修复"
-              sed -i -e '/int ret = 0, copied = 0;/a \\tunsigned int nr_subpages \= __PAGE_SIZE \/ PAGE_SIZE;' -e '/int ret = 0, copied = 0;/a \\tpagemap_entry_t \*res = NULL;' ./fs/proc/task_mmu.c
-              fake_patched=1
-            fi
-          fi
-          
-          if [ "$FORMATTED_BRANCH" = "android12-5.10" ] || [ "$FORMATTED_BRANCH" = "android13-5.10" ] || [ "$FORMATTED_BRANCH" = "android13-5.15" ]; then
-            if ! grep -qxF $'\tif (!vma_pages(vma))' ./fs/proc/task_mmu.c; then
-              echo "未找到 vma_pages,正在进行补丁修复"
-              fake_patched=1
-            fi
-          fi
+          SUSFS_VERSION="2.0.0"
+          KERNEL_PATCHES="../../kernel_patches"
 
-          if [ "$fake_patched" = 1 ]; then
-            if [ "$FORMATTED_BRANCH" = "android15-6.6" ]; then
-              if grep -qxF $'\tunsigned int nr_subpages = __PAGE_SIZE / PAGE_SIZE;' ./fs/proc/task_mmu.c; then
-                sed -i -e '/unsigned int nr_subpages \= __PAGE_SIZE \/ PAGE_SIZE;/d' -e '/pagemap_entry_t \*res = NULL;/d' ./fs/proc/task_mmu.c
+          if [ "${{ inputs.kernelsu_variant }}" == "Official" ] || [ "${{ inputs.kernelsu_variant }}" == "MKSU" ] || [ "${{ inputs.kernelsu_variant }}" == "Next" ] || [ "${{ inputs.kernelsu_variant }}" == "SukiSU" ]; then
+            CURRENT_SUB="${{ inputs.sub_level }}"
+            if [[ ! "$CURRENT_SUB" =~ ^[0-9]+$ ]]; then
+              CURRENT_SUB=99999
+            fi
+
+            # Android 12 - 5.10 修复
+            if [[ "${{ inputs.android_version }}" == "android12" && "${{ inputs.kernel_version }}" == "5.10" ]]; then
+              if [[ "$CURRENT_SUB" -le 209 ]]; then
+                sed -i -e 's/goto show_pad;/return 0;/' ./fs/proc/task_mmu.c
+              fi
+              if [[ "$CURRENT_SUB" -le 117 ]]; then
+                cp $KERNEL_PATCHES/wild/susfs_fix_patches/v${SUSFS_VERSION}/a12-5.10/fdinfo.c.patch ./
+                patch -p1 < fdinfo.c.patch || true
+              fi
+              if [[ "$CURRENT_SUB" -le 43 ]]; then
+                cp $KERNEL_PATCHES/wild/susfs_fix_patches/v${SUSFS_VERSION}/a12-5.10/base.c.patch ./
+                patch -p1 < base.c.patch || true
               fi
             fi
-            
-            if [ "$FORMATTED_BRANCH" = "android12-5.10" ] || [ "$FORMATTED_BRANCH" = "android13-5.10" ] || [ "$FORMATTED_BRANCH" = "android13-5.15" ]; then
-              if grep -qxF $'\t\tgoto show_pad;' ./fs/proc/task_mmu.c; then
+
+            # Android 13 - 5.15 修复
+            if [[ "${{ inputs.android_version }}" == "android13" && "${{ inputs.kernel_version }}" == "5.15" ]]; then
+              if [[ "$CURRENT_SUB" -le 41 ]]; then
+                cp $KERNEL_PATCHES/wild/susfs_fix_patches/v${SUSFS_VERSION}/a13-5.15/namespace.c.patch ./
+                patch -p1 < namespace.c.patch || true
+                cp $KERNEL_PATCHES/wild/susfs_fix_patches/v${SUSFS_VERSION}/a13-5.15/fdinfo.c.patch ./
+                patch -p1 < fdinfo.c.patch || true
+                cp $KERNEL_PATCHES/wild/susfs_fix_patches/v${SUSFS_VERSION}/a13-5.15/open.c.patch ./
+                patch -p1 < open.c.patch || true
+              fi
+              if [[ "$CURRENT_SUB" -le 148 && "${{ inputs.os_patch_level }}" != "2024-05" ]]; then
                 sed -i -e 's/goto show_pad;/return 0;/' ./fs/proc/task_mmu.c
               fi
             fi
-          fi
-  
-      - name: 应用新的HOOKS补丁
-        run: |
-          echo "更改为配置目录: $CONFIG..."
-          cd "$CONFIG/common"
 
-          if [ "${{ inputs.kernelsu_variant }}" == "Next" ]; then
-            echo "Applying hooks for KernelSU-Next..."
-            cp ../../kernel_patches/next/scope_min_manual_hooks_v1.4.patch ./
-            patch -p1 -F 3 < scope_min_manual_hooks_v1.4.patch
-          elif [ "${{ inputs.kernelsu_variant }}" == "SukiSU" ]; then
-            echo "Applying hooks for SukiSU..."
+            # Android 14 - 6.1 修复
+            if [[ "${{ inputs.android_version }}" == "android14" && "${{ inputs.kernel_version }}" == "6.1" ]]; then
+              if [[ "$CURRENT_SUB" -le 138 || "$CURRENT_SUB" -ge 145 ]]; then
+                cp $KERNEL_PATCHES/wild/susfs_fix_patches/v${SUSFS_VERSION}/a14-6.1/base.c.patch ./
+                patch -p1 < base.c.patch || true
+              fi
+              if ! grep -qF '#include <linux/dma-buf.h>' ./fs/proc/base.c; then
+                sed -i '/#include <linux\/cpufreq_times.h>/a #include <linux\/dma-buf.h>' ./fs/proc/base.c
+              fi
+              if grep -q 'susfs_is_current_proc_umounted' ./fs/proc/base.c && ! grep -qF '#include <linux/susfs.h>' ./fs/proc/base.c; then
+                sed -i '/#include <linux\/dma-buf.h>/a #include <linux\/susfs.h>' ./fs/proc/base.c
+              fi
+              if [[ "$CURRENT_SUB" -le 75 && "${{ inputs.os_patch_level }}" != "2024-05" ]]; then
+                sed -i -e 's/goto show_pad;/return 0;/' ./fs/proc/task_mmu.c
+              fi
+            fi
+
+            # Android 15 - 6.6 修复
+            if [[ "${{ inputs.android_version }}" == "android15" && "${{ inputs.kernel_version }}" == "6.6" ]]; then
+              if [[ "$CURRENT_SUB" -ge 98 ]]; then
+                cp $KERNEL_PATCHES/wild/susfs_fix_patches/v${SUSFS_VERSION}/a15-6.6/base.c.patch ./
+                patch -p1 < base.c.patch || true
+              fi
+              if grep -q 'AS_FLAGS_SUS_MAP\|susfs_is_current_proc_umounted' ./fs/proc/base.c && ! grep -qF 'susfs_def.h' ./fs/proc/base.c; then
+                if ! grep -qF '#include <linux/dma-buf.h>' ./fs/proc/base.c; then
+                  sed -i '/#include <linux\/cpufreq_times.h>/a #include <linux\/dma-buf.h>' ./fs/proc/base.c
+                fi
+                sed -i '/#include <linux\/dma-buf.h>/a #endif' ./fs/proc/base.c
+                sed -i '/#include <linux\/dma-buf.h>/a #include <linux\/susfs_def.h>' ./fs/proc/base.c
+                sed -i '/#include <linux\/dma-buf.h>/a #ifdef CONFIG_KSU_SUSFS_SUS_MAP' ./fs/proc/base.c
+              fi
+              if [[ "$CURRENT_SUB" -le 58 ]]; then
+                cp $KERNEL_PATCHES/wild/susfs_fix_patches/v${SUSFS_VERSION}/a15-6.6/task_mmu.c.patch ./
+                patch -p1 < task_mmu.c.patch || true
+              fi
+            fi
           fi
 
       - name: 复制源文件 & 应用LZ4KD & ZSTDN补丁
