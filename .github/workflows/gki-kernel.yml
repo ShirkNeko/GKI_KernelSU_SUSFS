@@ -330,6 +330,11 @@ jobs:
             echo "Applying SUSFS patches for SukiSU..."
              cd ./KernelSU
             echo "Applying SukiSU specific SUSFS patch..."
+            # Fix: SukiSU-Ultra uses KSU_IOCTL(CMD,...) macro which prepends KSU_IOCTL_##CMD.
+            # The Feb 26 'rcu allowlist' commit incorrectly passed the full constant name
+            # as the CMD arg, causing KSU_IOCTL_KSU_IOCTL_NEW_GET_* double-prefix errors.
+            sed -i 's/KSU_IOCTL(KSU_IOCTL_NEW_GET_ALLOW_LIST,/KSU_IOCTL(NEW_GET_ALLOW_LIST,/g' kernel/supercalls.c || true
+            sed -i 's/KSU_IOCTL(KSU_IOCTL_NEW_GET_DENY_LIST,/KSU_IOCTL(NEW_GET_DENY_LIST,/g' kernel/supercalls.c || true
           elif [ "${{ inputs.kernelsu_variant }}" == "ReSukiSU" ]; then
             echo "Applying SUSFS patches for ReSukiSU..."
              cd ./KernelSU
