@@ -246,9 +246,7 @@ jobs:
       - get_manager
     if: always()
     env:
-      REPO_OWNER: ShirkNeko
-      REPO_NAME: GKI_KernelSU_SUSFS
-      GITHUB_TOKEN: ${{ secrets.MY_GITHUB_TOKEN }}
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       RELEASE_NAME: "GKI Kernel: ${{ inputs.kernelsu_variant == 'Next' && 'KernelSU-' || '' }} ${{ inputs.kernelsu_variant }}"
       INITIAL_RELEASE_NOTES: |
         This release includes **${{ inputs.kernelsu_variant == 'Next' && 'KernelSU' || '' }}${{ inputs.kernelsu_variant }}**
@@ -269,8 +267,10 @@ jobs:
         
         <details>
         <summary>Notes:</summary>
+        
         - -> In SUS SU Mode 2, it will show as disabled or incompatible, the reason is that non-kprobe hooks were used (when compiling the kernel), and non-kprobe hooks are no longer needed!
-        - -> In the latest version of susfs, flashing AK3 compressed package with Kernel Flasher will brick your device, try [Horizon Kernel Flasher]\(https://github.com/libxzr/HorizonKernelFlasher)!
+        - -> In the latest version of susfs, flashing AK3 compressed package with Kernel Flasher will brick your device, try [Horizon Kernel Flasher](https://github.com/libxzr/HorizonKernelFlasher)!
+        
         </details>
         
         Modules:
@@ -296,14 +296,14 @@ jobs:
       - name: Generate and Create New Tag (Atomic)
         if: ${{ steps.release_check.outcome == 'success' }}
         env:
-          GITHUB_TOKEN: ${{ secrets.MY_GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -e
 
           BASE_VERSION="v2.0.0"
           
           # Fetch all existing tags using git ls-remote
-          EXISTING_TAGS=$(git ls-remote --tags https://github.com/$REPO_OWNER/$REPO_NAME.git | awk '{print $2}' | sed 's/refs\/tags\///' || true)
+          EXISTING_TAGS=$(git ls-remote --tags https://github.com/${{ github.repository }}.git | awk '{print $2}' | sed 's/refs\/tags\///' || true)
 
           # Find highest revision number for this base version
           MAX_REVISION=0
@@ -359,7 +359,7 @@ jobs:
             git clone https://github.com/SukiSU-Ultra/SukiSU-Ultra.git suki-tmp
             cd suki-tmp
             KSU_GIT_VERSION=$(git rev-list --count HEAD)
-            KSU_VERSION=$((10000 + KSU_GIT_VERSION + 700))
+            KSU_VERSION=$((4 * 10000 + KSU_GIT_VERSION - 2815))
             echo "SukiSU version: $KSU_VERSION"
             cd ..
             rm -rf suki-tmp
@@ -397,7 +397,7 @@ jobs:
             elif [ "${{ inputs.kernelsu_variant }}" == "Next" ]; then
               KSU_REPO_URL="https://github.com/KernelSU-Next/KernelSU-Next.git"
             elif [ "${{ inputs.kernelsu_variant }}" == "SukiSU" ]; then
-              KSU_REPO_URL="https://github.com/ShirkNeko/KernelSU.git"
+              KSU_REPO_URL="https://github.com/SukiSU-Ultra/SukiSU-Ultra.git"
             fi
             
             if [ -n "$KSU_REPO_URL" ]; then
@@ -422,8 +422,8 @@ jobs:
             KSU_REPO_URL="https://github.com/5ec1cff/KernelSU.git"
             KSU_REPO_URL2="5ec1cff/KernelSU"
           elif [ "${{ inputs.kernelsu_variant }}" == "SukiSU" ]; then
-            KSU_REPO_URL="https://github.com/ShirkNeko/KernelSU.git"
-            KSU_REPO_URL2="ShirkNeko/KernelSU"
+            KSU_REPO_URL="https://github.com/SukiSU-Ultra/SukiSU-Ultra.git"
+            KSU_REPO_URL2="SukiSU-Ultra/SukiSU-Ultra"
           else
             echo "Warning: Unknown KernelSU variant selected. Defaulting to Official for URL generation."
             KSU_REPO_URL="https://github.com/tiann/KernelSU.git"
@@ -453,7 +453,7 @@ jobs:
           elif [ "${{ inputs.kernelsu_variant }}" == "MKSU" ]; then
             FINAL_RELEASE_NOTES+="\nMKSU Manager:\n-> https://github.com/5ec1cff/KernelSU"
           elif [ "${{ inputs.kernelsu_variant }}" == "SukiSU" ]; then
-            FINAL_RELEASE_NOTES+="\nSukiSU Manager:\n-> https://github.com/ShirkNeko/SukiSU-Ultra"
+            FINAL_RELEASE_NOTES+="\nSukiSU Manager:\n-> https://github.com/SukiSU-Ultra/SukiSU-Ultra"
           fi
           
           FINAL_RELEASE_NOTES+="\n\nLTO: thin"
@@ -559,12 +559,12 @@ jobs:
           prerelease: true
           release_name: ${{ env.RELEASE_NAME }}
           body: ${{ env.FULL_RELEASE_NOTES }}
-          token: ${{ secrets.MY_GITHUB_TOKEN }}
+          token: ${{ secrets.GITHUB_TOKEN }}
           
       - name: Upload Release Assets
         if: ${{ steps.release_check.outcome == 'success' }}
         env:
-          GH_TOKEN: ${{ secrets.MY_GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           echo "Uploading release assets..."
           
