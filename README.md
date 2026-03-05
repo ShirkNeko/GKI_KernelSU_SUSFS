@@ -1,3 +1,16 @@
+Android 12 5.10 automatic kernel builder.
+
+Ksu
+Next
+Sukisu
+Resukisu
+Mksu
+
+
+
+
+
+
 ### 这是一个自动构建GKI内核的仓库
 
 > 非GKI可以尝试[SukiSU云盘](https://alist.shirkneko.top)的资源，不支持一加ColorOS14、15
