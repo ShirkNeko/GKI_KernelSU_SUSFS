@@ -356,7 +356,7 @@ jobs:
 
       - name: 一些修复补丁
         run: |
-          cd "$CONFIG/common"
+          cd "$CONFIG"
           FORMATTED_BRANCH="${{ inputs.android_version }}-${{ inputs.kernel_version }}"
           # Fake Patch to fix failures
           fake_patched=0
@@ -406,7 +406,7 @@ jobs:
       - name: 应用新的HOOKS补丁
         run: |
           echo "更改为配置目录: $CONFIG..."
-          cd "$CONFIG/common"
+          cd "$CONFIG"
 
           if [ "${{ inputs.kernelsu_variant }}" == "Next" ]; then
             echo "Applying hooks for KernelSU-Next..."
@@ -420,7 +420,7 @@ jobs:
         if: ${{ inputs.use_zram }}
         run: |
           echo "更改为配置目录: $CONFIG..."
-          cd "$CONFIG/common"
+          cd "$CONFIG"
           cp -r ../../SukiSU_patch/other/zram/lz4k/include/linux/* ./include/linux/
           cp -r ../../SukiSU_patch/other/zram/lz4k/lib/* ./lib/
           cp -r ../../SukiSU_patch/other/zram/lz4k/crypto/* ./crypto/
@@ -439,7 +439,7 @@ jobs:
       - name: 应用隐藏某特征的补丁
         run: |
           echo "更改为配置目录: $CONFIG..."
-          cd "$CONFIG/common"
+          cd "$CONFIG"
           # Apply additional patch
           if [ "${{ inputs.kernelsu_variant }}" == "SukiSU" ]; then
           cp ../../SukiSU_patch/69_hide_stuff.patch ./
