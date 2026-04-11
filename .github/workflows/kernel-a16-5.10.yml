@@ -51,7 +51,7 @@ jobs:
     secrets: inherit
     with:
       make_release: ${{ inputs.make_release || false }}
-      android_version: "android16"
+      android_version: "android12"
       kernel_version: "5.10"
       sub_level: ${{ matrix.sub_level }}
       os_patch_level: ${{ matrix.os_patch_level }}
@@ -61,5 +61,4 @@ jobs:
       version: ${{ inputs.version || '' }}
       use_zram: ${{ inputs.use_zram }}
       use_kpm: ${{ inputs.use_kpm }}
-      supp_op: ${{ inputs.supp_op || false }}
       BBG: ${{ inputs.BBG || false }}
