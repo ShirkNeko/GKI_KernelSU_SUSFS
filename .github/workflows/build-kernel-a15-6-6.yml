@@ -45,6 +45,11 @@ on:
         required: false
         type: boolean
         default: false
+      BBG:
+        description: "是否启用内核层面阻止对关键分区/设备节点的非法写入(LSM)？"
+        required: true
+        type: boolean
+        default: false
       get_manager:
         description: '是否同时获取最新KSU管理器?（实验性功能，报错请关闭）'
         required: true
@@ -63,6 +68,7 @@ jobs:
       use_zram: ${{ inputs.use_zram }}
       use_kpm: ${{ inputs.use_kpm }}
       supp_op: ${{ inputs.supp_op }}
+      BBG: ${{ inputs.BBG || false }}
  get-ksu-manager:
     if: ${{ inputs.get_manager }}
     uses: ./.github/workflows/get-manager.yml
