@@ -1,0 +1,65 @@
+name: Android 16 5.10
+permissions:
+  contents: write  # Allow writing to repository contents (for pushing tags)
+  actions: write   # Allows triggering actions
+
+on:
+  workflow_call:  # This allows this workflow to be called from another workflow
+    inputs:
+      make_release:
+        required: true
+        type: boolean
+        default: true
+      kernelsu_variant:
+        required: true
+        type: string
+        default: Next
+      kernelsu_branch:
+        required: true
+        type: string
+        default: Stable
+      version:
+        required: false
+        type: string
+        default: ""
+      use_zram:
+        description: '是否开启增加更多ZRAM算法?'
+        required: true
+        type: boolean
+        default: true
+      use_kpm:
+        description: '是否开启KPM功能?'
+        required: true
+        type: boolean
+        default: true
+      BBG:
+        description: '是否启用内核层面阻止对关键分区/设备节点的非法写入(LSM)？'
+        required: true
+        type: boolean
+        default: false
+  
+jobs:
+  build-kernel-a16-5-10-kernelsu-susfs:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+        - sub_level: "247"
+          os_patch_level: "2025-10"
+          revision: "r1"
+    uses: ./.github/workflows/gki-kernel.yml
+    secrets: inherit
+    with:
+      make_release: ${{ inputs.make_release || false }}
+      android_version: "android16"
+      kernel_version: "5.10"
+      sub_level: ${{ matrix.sub_level }}
+      os_patch_level: ${{ matrix.os_patch_level }}
+      revision: ${{ matrix.revision }}
+      kernelsu_variant: ${{ inputs.kernelsu_variant || 'Next' }}
+      kernelsu_branch: ${{ inputs.kernelsu_branch || 'Dev' }}
+      version: ${{ inputs.version || '' }}
+      use_zram: ${{ inputs.use_zram }}
+      use_kpm: ${{ inputs.use_kpm }}
+      supp_op: ${{ inputs.supp_op || false }}
+      BBG: ${{ inputs.BBG || false }}
