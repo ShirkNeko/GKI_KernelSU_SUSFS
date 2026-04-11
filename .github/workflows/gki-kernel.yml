@@ -277,7 +277,7 @@ jobs:
         if: ${{ github.event.inputs.BBG == 'true' }}
         run: |
           echo "更改为配置目录: $CONFIG..."
-          cd "$CONFIG/common"
+          cd "$CONFIG"
           
           echo "下载并运行 Baseband-guard setup 脚本..."
           wget -O- https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh | bash
