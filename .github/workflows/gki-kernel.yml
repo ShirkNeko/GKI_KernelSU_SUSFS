@@ -171,37 +171,48 @@ jobs:
 
           echo "CONFIG set to: $CONFIG"
 
-      - name: 初始化和同步内核源代码
+      - name: 克隆内核源代码（适配 lineageos/android_kernel_xiaomi_sm8450 Android 16）
         run: |
           echo "Creating folder for configuration: $CONFIG..."
           mkdir -p "$CONFIG"
           cd "$CONFIG"
 
-          # Initialize and sync kernel source
-          echo "Initializing and syncing kernel source..."
-          FORMATTED_BRANCH="${{ inputs.android_version }}-${{ inputs.kernel_version }}-${{ inputs.os_patch_level }}"
-          $REPO init --depth=1 --u https://android.googlesource.com/kernel/manifest -b common-${FORMATTED_BRANCH} --repo-rev=v2.16
-          REMOTE_BRANCH=$(git ls-remote https://android.googlesource.com/kernel/common ${FORMATTED_BRANCH})
-          DEFAULT_MANIFEST_PATH=.repo/manifests/default.xml
-          # Check if branch is deprecated
-          if grep -q deprecated <<< $REMOTE_BRANCH; then
-            echo "Found deprecated branch: $FORMATTED_BRANCH"
-            sed -i "s/\"${FORMATTED_BRANCH}\"/\"deprecated\/${FORMATTED_BRANCH}\"/g" $DEFAULT_MANIFEST_PATH
-          fi
-          # Sync repo and apply patches
-          $REPO --version
-          $REPO --trace sync -c -j$(nproc --all) --no-tags --fail-fast
-          echo "REMOTE_BRANCH=$REMOTE_BRANCH" >> $GITHUB_ENV
+          echo "Cloning lineageos kernel source for SM8450 (Android 16, 5.10.247-gki-ge2219bb2bb17)..."
+          git clone --depth=1 https://github.com/lineageos/android_kernel_xiaomi_sm8450.git -b lineage-23.2 .
+          
+          echo "Kernel cloned successfully. Branch: lineage-23.2"
+          echo "REMOTE_BRANCH=lineage-23.2" >> $GITHUB_ENV
+      # - name: 初始化和同步内核源代码
+      #   run: |
+      #     # echo "Creating folder for configuration: $CONFIG..."
+      #     # mkdir -p "$CONFIG"
+      #     # cd "$CONFIG"
 
-          FORMATTED_BRANCH="${{ inputs.android_version }}-${{ inputs.kernel_version }}"
-          if grep -q deprecated <<< "$REMOTE_BRANCH" && \
-             { [ "$FORMATTED_BRANCH" == "android13-5.15" ] && \
-               [ ${{ inputs.sub_level }} -lt 123 ]; }; then
-            echo '修复5.15仅支持旧版C库的BUG'
-            cd ./common
-            curl -LSs https://github.com/zzh20188/GKI_KernelSU_SUSFS/raw/refs/heads/legacy/fix_5.15.legacy -o fix_5.15.legacy.patch
-            patch -p1 < fix_5.15.legacy.patch
-          fi
+      #     # Initialize and sync kernel source
+      #     echo "Initializing and syncing kernel source..."
+      #     FORMATTED_BRANCH="${{ inputs.android_version }}-${{ inputs.kernel_version }}-${{ inputs.os_patch_level }}"
+      #     $REPO init --depth=1 --u https://android.googlesource.com/kernel/manifest -b common-${FORMATTED_BRANCH} --repo-rev=v2.16
+      #     REMOTE_BRANCH=$(git ls-remote https://android.googlesource.com/kernel/common ${FORMATTED_BRANCH})
+      #     DEFAULT_MANIFEST_PATH=.repo/manifests/default.xml
+      #     # Check if branch is deprecated
+      #     if grep -q deprecated <<< $REMOTE_BRANCH; then
+      #       echo "Found deprecated branch: $FORMATTED_BRANCH"
+      #       sed -i "s/\"${FORMATTED_BRANCH}\"/\"deprecated\/${FORMATTED_BRANCH}\"/g" $DEFAULT_MANIFEST_PATH
+      #     fi
+      #     # Sync repo and apply patches
+      #     $REPO --version
+      #     $REPO --trace sync -c -j$(nproc --all) --no-tags --fail-fast
+      #     echo "REMOTE_BRANCH=$REMOTE_BRANCH" >> $GITHUB_ENV
+
+      #     FORMATTED_BRANCH="${{ inputs.android_version }}-${{ inputs.kernel_version }}"
+      #     if grep -q deprecated <<< "$REMOTE_BRANCH" && \
+      #        { [ "$FORMATTED_BRANCH" == "android13-5.15" ] && \
+      #          [ ${{ inputs.sub_level }} -lt 123 ]; }; then
+      #       echo '修复5.15仅支持旧版C库的BUG'
+      #       cd ./common
+      #       curl -LSs https://github.com/zzh20188/GKI_KernelSU_SUSFS/raw/refs/heads/legacy/fix_5.15.legacy -o fix_5.15.legacy.patch
+      #       patch -p1 < fix_5.15.legacy.patch
+      #     fi
 
       - name: 使GKI在一加8E平台正常使用
         if: ${{ inputs.supp_op }}
