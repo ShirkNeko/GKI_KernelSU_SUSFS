@@ -76,6 +76,12 @@ def load_build_matrix() -> dict:
             {"sub_level": "66", "os_patch_level": "2025-02"},
             {"sub_level": "102", "os_patch_level": "2025-10"},
         ],
+        "android16-6.12": [
+            {"sub_level": "23", "os_patch_level": "2025-06"},
+            {"sub_level": "30", "os_patch_level": "2025-07"},
+            {"sub_level": "58", "os_patch_level": "2025-12"},
+            {"sub_level": "69", "os_patch_level": "2026-03"},
+        ],
     }
 
 
