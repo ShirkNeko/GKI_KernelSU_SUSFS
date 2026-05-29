@@ -10,6 +10,7 @@ class AndroidVersion(Enum):
     ANDROID13 = "android13"
     ANDROID14 = "android14"
     ANDROID15 = "android15"
+    ANDROID16 = "android16"
 
 
 class KernelVersion(Enum):
@@ -18,6 +19,7 @@ class KernelVersion(Enum):
     KERNEL_5_15 = "5.15"
     KERNEL_6_1 = "6.1"
     KERNEL_6_6 = "6.6"
+    KERNEL_6_12 = "6.12"
 
 
 class KSUVersion(Enum):
@@ -32,6 +34,7 @@ ANDROID_KERNEL_MAP = {
     AndroidVersion.ANDROID13: [KernelVersion.KERNEL_5_10, KernelVersion.KERNEL_5_15],
     AndroidVersion.ANDROID14: [KernelVersion.KERNEL_5_15, KernelVersion.KERNEL_6_1],
     AndroidVersion.ANDROID15: [KernelVersion.KERNEL_6_6],
+    AndroidVersion.ANDROID16: [KernelVersion.KERNEL_6_12],
 }
 
 # KernelSU 仓库配置
