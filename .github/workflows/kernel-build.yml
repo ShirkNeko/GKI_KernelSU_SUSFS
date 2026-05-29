@@ -171,8 +171,8 @@ jobs:
       - name: Prepare artifacts
         run: |
           mkdir -p artifacts
-          find . -name "*.zip" -type f -exec cp {} artifacts/ \;
-          find . -name "*.img" -type f -exec cp {} artifacts/ \;
+          find /tmp/gki-build -name "*.zip" -type f -exec cp {} artifacts/ \;
+          find /tmp/gki-build -name "*.img" -type f -exec cp {} artifacts/ \;
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
