@@ -16,6 +16,7 @@ on:
           - android13
           - android14
           - android15
+          - android16
         default: android13
       kernel_version:
         description: 'Kernel 版本'
@@ -26,6 +27,7 @@ on:
           - "5.15"
           - "6.1"
           - "6.6"
+          - "6.12"
         default: "5.15"
       sub_level:
         description: 'Sub Level 版本'
