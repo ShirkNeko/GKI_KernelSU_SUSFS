@@ -843,24 +843,47 @@ CONFIG_ZRAM_WRITEBACK=y
         # 先进入配置目录
         self._chdir(self.work_dir)
 
+        # 长度安全保护：UTS_RELEASE 硬限制为 64 字符(含\0)，预留 15 字符给 git hash
+        MAX_CUSTOM_LEN = 48
+        safe_custom_version = ""
+        if self.config.custom_version:
+            safe_custom_version = self.config.custom_version.rstrip('-')[:MAX_CUSTOM_LEN]
+            if len(self.config.custom_version) > MAX_CUSTOM_LEN:
+                logger.warning(
+                    f"自定义版本过长({len(self.config.custom_version)}字符)，"
+                    f"已截断至{MAX_CUSTOM_LEN}字符以防止UTS_RELEASE溢出"
+                )
+
         # 配置版本号
         setlocalversion = self.work_dir / "common/scripts/setlocalversion"
         if setlocalversion.exists():
             with open(setlocalversion, "r") as f:
                 content = f.read()
 
-            if self.config.custom_version:
+            if safe_custom_version:
                 # 替换最后一行的 echo "$res" 为自定义版本
                 lines = content.split('\n')
+                modified = False
                 for i, line in enumerate(lines):
-                    if 'echo "$res"' in line:
-                        lines[i] = f'\techo "{self.config.custom_version}"'
+                    if 'echo "$res"' in line and not line.strip().startswith('#'):
+                        lines[i] = f'\techo "{safe_custom_version}$res"'
+                        modified = True
+                        logger.info(f"已设置自定义版本: {safe_custom_version} + githash")
                         break
-                with open(setlocalversion, "w") as f:
-                    f.write('\n'.join(lines))
-                logger.info(f"已设置自定义版本: {self.config.custom_version}")
+
+                if not modified:
+                    logger.warning("未在 setlocalversion 中找到 'echo \"$res\"' 行，自定义版本未生效")
+                else:
+                    with open(setlocalversion, "w") as f:
+                        f.write('\n'.join(lines))
             else:
-                logger.info("未设置自定义版本，使用默认值")
+                logger.info("未设置自定义版本，使用默认版本号 + githash")
+
+            if (self.work_dir / "build/build.sh").exists():
+                if "-dirty" in content:
+                    content = content.replace("-dirty", "")
+                    with open(setlocalversion, "w") as f:
+                        f.write(content)
 
         # 配置构建时间
         import datetime
