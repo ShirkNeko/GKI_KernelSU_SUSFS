@@ -255,7 +255,7 @@ CONFIG_KSU_SUSFS_OPEN_REDIRECT=y
             ksu_dir = self.work_dir / "KernelSU"
             if ksu_dir.exists():
                 self._chdir(ksu_dir)
-                self._run_cmd(f"git checkout {self.config.kernelsu_commit}", check=False)
+                self._run_cmd(f"git checkout {self.config.kernelsu_commit}")
                 self._chdir(self.work_dir)
 
     def add_bbg(self):
@@ -285,21 +285,162 @@ CONFIG_KSU_SUSFS_OPEN_REDIRECT=y
         logger.info("=== 应用 SUSFS 补丁 ===")
         self._chdir(self.work_dir)
         common_dir = self.work_dir / "common"
+        self._apply_susfs_kernelsu_patch()
         susfs_patch = self.susfs_dir / "kernel_patches" / self.config.get_susfs_patch_filename()
         if susfs_patch.exists():
-            self._run_cmd(f"cp {susfs_patch} {common_dir}/", check=False)
+            self._run_cmd(f"cp {susfs_patch} {common_dir}/")
+        else:
+            raise FileNotFoundError(f"SUSFS GKI 补丁不存在: {susfs_patch}")
         for src, dst in [
             (self.susfs_dir / "kernel_patches/fs", common_dir / "fs/"),
             (self.susfs_dir / "kernel_patches/include/linux", common_dir / "include/linux/"),
         ]:
             if src.exists():
-                self._run_cmd(f"cp -r {src}/* {dst}", check=False)
-        if susfs_patch.exists():
-            patch_file = common_dir / self.config.get_susfs_patch_filename()
-            if patch_file.exists():
-                self._chdir(common_dir)
-                self._run_cmd(f"patch -p1 --fuzz=3 < {patch_file}", check=False)
-                self._chdir(self.work_dir)
+                self._run_cmd(f"cp -r {src}/* {dst}")
+            else:
+                raise FileNotFoundError(f"SUSFS 源目录不存在: {src}")
+        patch_file = common_dir / self.config.get_susfs_patch_filename()
+        self._chdir(common_dir)
+        self._run_cmd(f"patch -p1 --fuzz=3 -i {patch_file}")
+        self._chdir(self.work_dir)
+
+    def _apply_susfs_kernelsu_patch(self):
+        logger.info("=== 应用 SUSFS KernelSU 接入补丁 ===")
+        ksu_dir = self.work_dir / "KernelSU"
+        patch_file = self.susfs_dir / "kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch"
+        if not ksu_dir.exists():
+            raise FileNotFoundError(f"KernelSU 目录不存在: {ksu_dir}")
+        if not patch_file.exists():
+            raise FileNotFoundError(f"SUSFS KernelSU 补丁不存在: {patch_file}")
+
+        self._chdir(ksu_dir)
+        result = self._run_cmd(f"patch -p1 --fuzz=3 -i {patch_file}", check=False, capture_output=True)
+        output = "\n".join(filter(None, [result.stdout, result.stderr]))
+        if output:
+            for line in output.splitlines():
+                logger.info(line)
+
+        rejects = set(re.findall(r"saving rejects to file ([^\s]+)", output))
+        known_rejects = {"kernel/core/init.c.rej", "kernel/feature/selinux_hide.c.rej"}
+        unexpected_rejects = rejects - known_rejects
+        if result.returncode != 0 and (unexpected_rejects or not rejects):
+            raise RuntimeError(f"SUSFS KernelSU 补丁应用失败: {sorted(unexpected_rejects) or 'unknown reject'}")
+        if rejects:
+            logger.warning(f"SUSFS KernelSU 补丁存在 SukiSU 兼容性 reject，将应用兼容修正: {sorted(rejects)}")
+            self._fix_sukisu_susfs_rejects()
+
+        self._verify_susfs_kernelsu_patch()
+        self._chdir(self.work_dir)
+
+    def _fix_sukisu_susfs_rejects(self):
+        init_file = self.work_dir / "KernelSU/kernel/core/init.c"
+        with open(init_file, "r") as f:
+            content = f.read()
+
+        content = content.replace('#include "hook/syscall_hook.h"\n', '')
+        content = content.replace('#include "hook/syscall_hook_manager.h"\n', '')
+        content = content.replace('#include "hook/lsm_hook.h"\n', '')
+        content = content.replace('#include "infra/symbol_resolver.h"\n', '')
+        if '#include "hook/setuid_hook.h"' not in content:
+            content = content.replace(
+                '#include "feature/selinux_hide.h"\n',
+                '#include "feature/selinux_hide.h"\n#include "hook/setuid_hook.h"\n#include "feature/sucompat.h"\n'
+            )
+
+        content = content.replace("    ksu_init_symbol_resolver();\n\n", "")
+        content = content.replace("    ksu_syscall_hook_init();\n\n", "")
+        if "susfs_init();" not in content:
+            marker = '    if (!ksu_cred) {\n        pr_err("prepare cred failed!\\n");\n    }\n'
+            content = content.replace(
+                marker,
+                marker + "\n#ifdef CONFIG_KSU_SUSFS\n    susfs_init();\n#endif\n"
+            )
+
+        init_block = """    ksu_feature_init();
+
+    ksu_supercalls_init();
+
+    ksu_sucompat_init();
+
+    ksu_setuid_hook_init();
+
+    ksu_sulog_init();
+
+    ksu_adb_root_init();
+
+    ksu_selinux_hide_init();
+
+    ksu_allowlist_init();
+
+    ksu_throne_tracker_init();
+
+    ksu_ksud_init();
+
+    ksu_file_wrapper_init();
+
+"""
+        content = re.sub(r"    ksu_feature_init\(\);\n.*?\n#ifdef MODULE", init_block + "#ifdef MODULE", content, flags=re.DOTALL)
+        content = re.sub(
+            r"    // Phase 1: Stop all hooks first to prevent new callbacks\n"
+            r"    ksu_syscall_hook_manager_exit\(\);\n\n"
+            r"    ksu_supercalls_exit\(\);\n\n"
+            r"    if \(!ksu_late_loaded\)\n"
+            r"        ksu_ksud_exit\(\);\n",
+            "    ksu_supercalls_exit();\n\n    ksu_ksud_exit();\n",
+            content
+        )
+        content = content.replace("    ksu_lsm_hook_exit();\n", "")
+
+        with open(init_file, "w") as f:
+            f.write(content)
+
+        selinux_hide_file = self.work_dir / "KernelSU/kernel/feature/selinux_hide.c"
+        with open(selinux_hide_file, "r") as f:
+            content = f.read()
+        content = re.sub(
+            r"\n    if \(ksu_late_loaded && !new_status->enforcing\) \{\n"
+            r"        // In late_load mode, we may be loaded when selinux was set to permissive\n"
+            r"        // So we need to .*?sequence value\n"
+            r"        // We assume that setenforce 0 is just called once\n"
+            r"        new_status->enforcing = 1;\n"
+            r"        new_status->sequence = .*?;\n"
+            r"    \}\n",
+            "\n",
+            content,
+            flags=re.DOTALL
+        )
+        with open(selinux_hide_file, "w") as f:
+            f.write(content)
+
+    def _verify_susfs_kernelsu_patch(self):
+        checks = [
+            (self.work_dir / "KernelSU/kernel/Kconfig", "config KSU_SUSFS"),
+            (self.work_dir / "KernelSU/kernel/Makefile", "SUSFS_VERSION"),
+            (self.work_dir / "KernelSU/kernel/core/init.c", "susfs_init();"),
+            (self.work_dir / "KernelSU/kernel/core/init.c", "ksu_sucompat_init();"),
+            (self.work_dir / "KernelSU/kernel/core/init.c", "ksu_setuid_hook_init();"),
+            (self.work_dir / "KernelSU/kernel/feature/sucompat.c", "ksu_handle_execveat("),
+            (self.work_dir / "KernelSU/kernel/runtime/ksud_integration.c", "ksu_handle_vfs_fstat("),
+            (self.work_dir / "KernelSU/kernel/supercall/dispatch.c", "ksu_handle_sys_reboot"),
+            (self.work_dir / "KernelSU/kernel/supercall/dispatch.c", "CMD_SUSFS_SHOW_VERSION"),
+        ]
+        for path, marker in checks:
+            with open(path, "r") as f:
+                if marker not in f.read():
+                    raise RuntimeError(f"SUSFS KernelSU 接入校验失败: {path} 缺少 {marker}")
+
+        init_file = self.work_dir / "KernelSU/kernel/core/init.c"
+        with open(init_file, "r") as f:
+            init_content = f.read()
+        forbidden_markers = ["ksu_syscall_hook_init();", "ksu_syscall_hook_manager_init();"]
+        for marker in forbidden_markers:
+            if marker in init_content:
+                raise RuntimeError(f"SUSFS KernelSU 接入校验失败: core/init.c 仍包含 {marker}")
+
+        selinux_hide_file = self.work_dir / "KernelSU/kernel/feature/selinux_hide.c"
+        with open(selinux_hide_file, "r") as f:
+            if "ksu_late_loaded" in f.read():
+                raise RuntimeError("SUSFS KernelSU 接入校验失败: selinux_hide.c 仍引用 ksu_late_loaded")
 
     def apply_sukisu_patches(self):
         logger.info("=== 应用 SukiSU 补丁 ===")
