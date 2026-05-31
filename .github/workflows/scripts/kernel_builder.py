@@ -575,7 +575,7 @@ CONFIG_KSU_SUSFS_OPEN_REDIRECT=y
         try:
             extra_kcflags = ""
             if self.config.android_version == "android13" and self.config.kernel_version == "5.10":
-                extra_kcflags = 'KCFLAGS="-Wno-unused-label -Wno-unused-variable" '
+                extra_kcflags = 'KCFLAGS="-Wno-unused-label -Wno-unused-variable -Wno-unused-function" '
 
             if (self.work_dir / "build/build.sh").exists():
                 logger.info("使用旧版构建方式...")
