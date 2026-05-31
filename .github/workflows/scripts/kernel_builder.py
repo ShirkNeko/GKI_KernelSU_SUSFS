@@ -573,12 +573,16 @@ CONFIG_KSU_SUSFS_OPEN_REDIRECT=y
                 f.write('\n'.join(lines))
 
         try:
+            extra_kcflags = ""
+            if self.config.android_version == "android13" and self.config.kernel_version == "5.10":
+                extra_kcflags = 'KCFLAGS="-Wno-unused-label -Wno-unused-variable" '
+
             if (self.work_dir / "build/build.sh").exists():
                 logger.info("使用旧版构建方式...")
-                result = self._run_cmd("LTO=thin BUILD_CONFIG=common/build.config.gki.aarch64 build/build.sh CC=\"/usr/bin/ccache clang\"", check=False)
+                result = self._run_cmd(f"{extra_kcflags}LTO=thin BUILD_CONFIG=common/build.config.gki.aarch64 build/build.sh CC=\"/usr/bin/ccache clang\"", check=False)
             else:
                 logger.info("使用 Bazel 构建方式...")
-                result = self._run_cmd("tools/bazel build --disk_cache=/home/runner/.cache/bazel --config=fast --lto=thin //common:kernel_aarch64_dist", check=False)
+                result = self._run_cmd(f"{extra_kcflags}tools/bazel build --disk_cache=/home/runner/.cache/bazel --config=fast --lto=thin //common:kernel_aarch64_dist", check=False)
 
             if result.returncode == 0:
                 logger.info("=== 内核编译成功 ===")
