@@ -340,14 +340,17 @@ CONFIG_KSU_SUSFS_OPEN_REDIRECT=y
         content = content.replace('#include "hook/syscall_hook.h"\n', '')
         content = content.replace('#include "hook/syscall_hook_manager.h"\n', '')
         content = content.replace('#include "hook/lsm_hook.h"\n', '')
-        content = content.replace('#include "infra/symbol_resolver.h"\n', '')
+        if '#include "infra/symbol_resolver.h"' not in content:
+            content = content.replace(
+                '#include "selinux/selinux.h"\n',
+                '#include "selinux/selinux.h"\n#include "infra/symbol_resolver.h"\n'
+            )
         if '#include "hook/setuid_hook.h"' not in content:
             content = content.replace(
                 '#include "feature/selinux_hide.h"\n',
                 '#include "feature/selinux_hide.h"\n#include "hook/setuid_hook.h"\n#include "feature/sucompat.h"\n'
             )
 
-        content = content.replace("    ksu_init_symbol_resolver();\n\n", "")
         content = content.replace("    ksu_syscall_hook_init();\n\n", "")
         if "susfs_init();" not in content:
             marker = '    if (!ksu_cred) {\n        pr_err("prepare cred failed!\\n");\n    }\n'
@@ -355,6 +358,9 @@ CONFIG_KSU_SUSFS_OPEN_REDIRECT=y
                 marker,
                 marker + "\n#ifdef CONFIG_KSU_SUSFS\n    susfs_init();\n#endif\n"
             )
+        if "ksu_init_symbol_resolver();" not in content:
+            marker = "#ifdef CONFIG_KSU_SUSFS\n    susfs_init();\n#endif\n"
+            content = content.replace(marker, marker + "\n    ksu_init_symbol_resolver();\n")
 
         init_block = """    ksu_feature_init();
 
@@ -394,6 +400,17 @@ CONFIG_KSU_SUSFS_OPEN_REDIRECT=y
         with open(init_file, "w") as f:
             f.write(content)
 
+        kbuild_file = self.work_dir / "KernelSU/kernel/Kbuild"
+        with open(kbuild_file, "r") as f:
+            content = f.read()
+        if "kernelsu-objs += infra/symbol_resolver.o" not in content:
+            content = content.replace(
+                "kernelsu-objs += infra/su_mount_ns.o\n",
+                "kernelsu-objs += infra/su_mount_ns.o\nkernelsu-objs += infra/symbol_resolver.o\n"
+            )
+        with open(kbuild_file, "w") as f:
+            f.write(content)
+
         selinux_hide_file = self.work_dir / "KernelSU/kernel/feature/selinux_hide.c"
         with open(selinux_hide_file, "r") as f:
             content = f.read()
@@ -416,7 +433,9 @@ CONFIG_KSU_SUSFS_OPEN_REDIRECT=y
         checks = [
             (self.work_dir / "KernelSU/kernel/Kconfig", "config KSU_SUSFS"),
             (self.work_dir / "KernelSU/kernel/Makefile", "SUSFS_VERSION"),
+            (self.work_dir / "KernelSU/kernel/Kbuild", "infra/symbol_resolver.o"),
             (self.work_dir / "KernelSU/kernel/core/init.c", "susfs_init();"),
+            (self.work_dir / "KernelSU/kernel/core/init.c", "ksu_init_symbol_resolver();"),
             (self.work_dir / "KernelSU/kernel/core/init.c", "ksu_sucompat_init();"),
             (self.work_dir / "KernelSU/kernel/core/init.c", "ksu_setuid_hook_init();"),
             (self.work_dir / "KernelSU/kernel/feature/sucompat.c", "ksu_handle_execveat("),
