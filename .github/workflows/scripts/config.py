@@ -2,6 +2,39 @@ from dataclasses import dataclass
 from typing import Optional
 from enum import Enum
 import re
+import urllib.request
+import ssl
+
+
+def get_susfs_version() -> str:
+    """从 susfs 仓库获取版本号"""
+    ssl_ctx = ssl.create_default_context()
+    ssl_ctx.check_hostname = False
+    ssl_ctx.verify_mode = ssl.CERT_NONE
+
+    # 尝试多个分支获取版本号
+    branches = ["gki-android15-6.6", "gki-android14-6.1", "gki-android13-5.15", "gki-android12-5.10", "main"]
+    version_pattern = re.compile(r'#define\s+SUSFS_VERSION\s+"([^"]+)"')
+
+    for branch in branches:
+        try:
+            url = f"https://raw.githubusercontent.com/ShirkNeko/susfs4ksu/{branch}/kernel_patches/include/linux/susfs.h"
+            req = urllib.request.Request(url, headers={'User-Agent': 'Python'})
+            with urllib.request.urlopen(req, context=ssl_ctx, timeout=10) as response:
+                content = response.read().decode('utf-8')
+                match = version_pattern.search(content)
+                if match:
+                    return match.group(1)
+        except Exception:
+            continue
+
+    # 如果获取失败，返回默认值
+    return "v2.1.0"
+
+
+# 内核版本号 - 从 susfs 仓库自动获取
+KERNEL_VERSION = get_susfs_version()
+print(f"SUSFS Version: {KERNEL_VERSION}")
 
 
 class AndroidVersion(Enum):

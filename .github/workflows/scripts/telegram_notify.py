@@ -178,13 +178,28 @@ def build_release_notify_message(
     release_url: str,
     release_notes: str = None,
     hashes_file: str = None,
-    artifacts_dir: str = None,
+    status_file: str = None,
+    success_count: str = None,
+    failed_count: str = None,
 ) -> str:
     """生成新版本发布通知消息"""
-    message = f"""🎉 <b>新版本发布!</b>
+    message = f"""🎉 <b>构建完成!</b>
 
 📦 <b>版本:</b> {release_tag}
 🔗 <b>下载:</b> <a href="{release_url}">点击下载</a>"""
+
+    # 添加构建统计
+    success = int(success_count) if success_count and success_count.isdigit() else 0
+    failed = int(failed_count) if failed_count and failed_count.isdigit() else 0
+    total = success + failed
+
+    if total > 0:
+        success_emoji = "✅" if success == total else "⚠️"
+        message += f"""
+
+{success_emoji} <b>构建统计:</b>
+✅ 成功: {success}/{total}
+❌ 失败: {failed}/{total}"""
 
     # 添加完整的发布说明
     if release_notes:
@@ -243,23 +258,35 @@ def main():
 
     elif action == "release":
         if len(sys.argv) < 4:
-            print("错误: release 需要 <tag> <url> [notes_file] [hashes_file]")
+            print("错误: release 需要 <tag> <url> [notes_file] [hashes_file] [status_file] [success_count] [failed_count]")
             sys.exit(1)
 
         tag = sys.argv[2]
         url = sys.argv[3]
         notes = ""
         hashes_file = None
+        status_file = None
+        success_count = None
+        failed_count = None
 
+        # 解析可选参数
         for arg in sys.argv[4:]:
             if os.path.exists(arg):
                 if arg.endswith(".md"):
                     with open(arg, "r", encoding="utf-8") as f:
                         notes = f.read()
                 elif arg.endswith(".txt"):
-                    hashes_file = arg
+                    if "status" in arg:
+                        status_file = arg
+                    else:
+                        hashes_file = arg
+            elif arg.isdigit():
+                if success_count is None:
+                    success_count = arg
+                else:
+                    failed_count = arg
 
-        message = build_release_notify_message(tag, url, notes, hashes_file)
+        message = build_release_notify_message(tag, url, notes, hashes_file, status_file, success_count, failed_count)
         success = notifier.send_message(message)
 
         if hashes_file:

@@ -1,0 +1,74 @@
+name: 'Save Cache'
+description: 'Saves cache to GitHub Releases.'
+
+inputs:
+  cache_path:
+    description: 'Path where cache is located'
+    required: true
+    type: string
+  cache_key:
+    description: 'Unique key for the cache'
+    required: true
+    type: string
+  cache_bucket:
+    description: 'The tag name for the release (e.g., general-cache)'
+    required: true
+    default: 'general-cache'
+  github_token:
+    description: 'GitHub Token'
+    required: true
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Archive and Upload Cache
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github_token }}
+        TARGET_REPO: "${{ github.repository }}"
+      run: |
+        set -euo pipefail
+
+        CACHE_PATH="${{ inputs.cache_path }}"
+        TAG_NAME="${{ inputs.cache_bucket }}"
+        CACHE_FILE="cache-${{ inputs.cache_key }}.tar.zst"
+
+        echo "Checking if cache already exists..."
+
+        # Check if cache already exists
+        if curl -sL --fail "https://github.com/${TARGET_REPO}/releases/download/$TAG_NAME/$CACHE_FILE" -o /dev/null 2>&1; then
+          echo "Cache already exists for key: ${{ inputs.cache_key }}"
+          echo "Skipping upload."
+          exit 0
+        fi
+
+        echo "Cache not found, will upload..."
+
+        # Check if target path exists
+        if [ ! -e "$CACHE_PATH" ]; then
+          echo "Target path not found: $CACHE_PATH"
+          echo "Skipping cache save."
+          exit 0
+        fi
+
+        echo "Creating cache archive..."
+        tar -I zstd -c -f "$CACHE_FILE" -C "$CACHE_PATH/.." "$(basename "$CACHE_PATH")"
+
+        FILE_SIZE=$(stat -c%s "$CACHE_FILE" 2>/dev/null || stat -f%z "$CACHE_FILE" 2>/dev/null)
+        echo "Archive created: $CACHE_FILE ($FILE_SIZE bytes)"
+
+        echo "Ensuring release exists..."
+        if ! gh release view "$TAG_NAME" --repo "$TARGET_REPO" &>/dev/null; then
+          echo "Creating release $TAG_NAME..."
+          gh release create "$TAG_NAME" --title "Build Cache" --notes "Automated build cache storage" --repo "$TARGET_REPO" || true
+        fi
+
+        echo "Uploading cache..."
+        if timeout 10m gh release upload "$TAG_NAME" "$CACHE_FILE" --clobber --repo "$TARGET_REPO"; then
+          echo "Cache uploaded successfully!"
+          rm -f "$CACHE_FILE"
+        else
+          echo "Failed to upload cache"
+          rm -f "$CACHE_FILE"
+          exit 1
+        fi

@@ -4,6 +4,9 @@ import urllib.request
 import ssl
 import sys
 from pathlib import Path
+import sys as _sys
+_sys.path.insert(0, str(Path(__file__).parent))
+from config import KERNEL_VERSION
 
 
 class ReleaseGenerator:
@@ -40,19 +43,21 @@ class ReleaseGenerator:
         ksu_tag, ksu_commit = self.get_ksu_info()
         configs = [f"- Android {k.split('-')[0].replace('android', '')} (Kernel {k.split('-')[1]})" for k in sorted(matrix.keys())]
         return '\n'.join([
-            "## GKI Kernel with SukiSU & SUSFS v2.1.0", "",
+            f"## GKI Kernel with SukiSU & SUSFS {KERNEL_VERSION}", "",
             "### SukiSU Info",
             f"- Tag: `{ksu_tag}`",
             f"- Commit: `{ksu_commit}`", "",
             "### Supported Configurations",
             *configs, "",
             "### Features",
-            "- SUSFS v2.1.0", "- Manual Syscall Hooks", "- Magic Mount Support", "- BBR Support", "- LZ4KD Support",
+            f"- SUSFS {KERNEL_VERSION}", "- Manual Syscall Hooks", "- Magic Mount Support", "- BBR Support", "- LZ4KD Support",
         ])
 
     def save_body(self, output_path: str = "RELEASE_BODY.md"):
         body = self.generate_body()
-        with open(output_path, 'w') as f:
+        output_file = Path(output_path)
+        output_file.parent.mkdir(parents=True, exist_ok=True)
+        with open(output_file, 'w') as f:
             f.write(body)
         print(body)
 

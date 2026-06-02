@@ -62,24 +62,25 @@ env:
 jobs:
   prepare:
     runs-on: ubuntu-latest
+    env:
+      SCRIPTS_DIR: ./.github/workflows/scripts
     outputs:
       build_matrix: ${{ steps.generate.outputs.matrix }}
-      cache_version: ${{ steps.get_cache.outputs.version }}
+      kernel_version: ${{ steps.generate.outputs.kernel_version }}
+      classified_matrix: ${{ steps.generate.outputs.classified_matrix }}
+      matrix_summary: ${{ steps.generate.outputs.matrix_summary }}
+      cache_key: ${{ steps.get_cache_key.outputs.cache_key }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
 
-      - name: Get latest cache version
-        id: get_cache
-        run: |
-          cd ./.github/workflows/scripts
-          python3 cache_manager.py get-version ${{ github.repository }} ${{ github.ref_name }}
+      - name: Get cache key
+        id: get_cache_key
+        run: echo "cache_key=${{ github.ref_name }}-ccache" >> $GITHUB_OUTPUT
 
       - name: Generate build matrix
         id: generate
-        run: |
-          cd ./.github/workflows/scripts
-          python3 matrix_generator.py
+        run: python3 ${{ env.SCRIPTS_DIR }}/matrix_generator.py
 
   build:
     needs: prepare
@@ -88,6 +89,8 @@ jobs:
       fail-fast: false
       matrix:
         config: ${{ fromJson(needs.prepare.outputs.build_matrix) }}
+    env:
+      SCRIPTS_DIR: ./.github/workflows/scripts
     steps:
       - name: Maximize build space
         uses: AdityaGarg8/remove-unwanted-software@v5
@@ -112,7 +115,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt update && sudo apt upgrade -y
-          sudo apt install -y ccache python3 git curl wget zip unzip xz-utils openssl
+          sudo apt install -y ccache python3 git curl wget zip unzip xz-utils openssl pixz
           pip install PyYAML
 
       - name: Setup AVB signing key
@@ -132,15 +135,17 @@ jobs:
           ccache --set-config=compression=true
           echo "CCACHE_DIR=$HOME/.ccache" >> $GITHUB_ENV
 
-      - name: Download build cache
-        if: needs.prepare.outputs.cache_version != ''
-        run: |
-          cd ./.github/workflows/scripts
-          python3 cache_manager.py download "${{ github.repository }}" "${{ github.ref_name }}" "${{ matrix.config.android }}" "${{ matrix.config.kernel }}" "${{ matrix.config.sub_level }}"
+      - name: Restore ccache
+        id: restore-ccache
+        uses: ./.github/actions/cache-restore
+        with:
+          cache_path: /home/runner/.ccache
+          cache_key: ${{ github.ref_name }}-${{ matrix.config.android }}-${{ matrix.config.kernel }}-${{ matrix.config.sub_level }}
+          cache_bucket: ccache-cache
 
       - name: Build kernel
         run: |
-          cd ./.github/workflows/scripts
+          cd ${{ env.SCRIPTS_DIR }}
 
           ARGS="--android ${{ matrix.config.android }}"
           ARGS="$ARGS --kernel ${{ matrix.config.kernel }}"
@@ -159,17 +164,13 @@ jobs:
 
           python3 build.py $ARGS
 
-      - name: Save build cache
-        run: |
-          cd ./.github/workflows/scripts
-          python3 cache_manager.py save "${{ github.repository }}" "${{ github.ref_name }}" "${{ matrix.config.android }}" "${{ matrix.config.kernel }}" "${{ matrix.config.sub_level }}"
-
-      - name: Upload build cache
-        uses: actions/upload-artifact@v7
+      - name: Save ccache
+        uses: ./.github/actions/cache-save
         with:
-          name: build-cache-${{ github.ref_name }}-${{ matrix.config.android }}-${{ matrix.config.kernel }}-${{ matrix.config.sub_level }}
-          path: build-cache-${{ github.ref_name }}-${{ matrix.config.android }}-${{ matrix.config.kernel }}-${{ matrix.config.sub_level }}.tar.xz
-          retention-days: 1
+          cache_path: /home/runner/.ccache
+          cache_key: ${{ github.ref_name }}-${{ matrix.config.android }}-${{ matrix.config.kernel }}-${{ matrix.config.sub_level }}
+          cache_bucket: ccache-cache
+          github_token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Prepare artifacts
         id: prepare-artifacts
@@ -183,6 +184,8 @@ jobs:
           else
             echo "artifacts_exist=true" >> $GITHUB_OUTPUT
             ls -la artifacts/
+            # 生成 SHA256SUMS
+            cd artifacts && sha256sum * > SHA256SUMS.txt && cd ..
           fi
 
       - name: Upload artifacts
@@ -192,80 +195,137 @@ jobs:
           name: kernel-${{ matrix.config.android }}-${{ matrix.config.kernel }}-${{ matrix.config.sub_level }}
           path: artifacts/*
 
+      - name: Record build result
+        if: always()
+        run: |
+          mkdir -p build-results
+          # 复制 SHA256SUMS
+          if [ -f "artifacts/SHA256SUMS.txt" ]; then
+            cp artifacts/SHA256SUMS.txt build-results/${{ matrix.config.android }}-${{ matrix.config.kernel }}-${{ matrix.config.sub_level }}.txt
+          fi
+          # 记录构建状态
+          echo "${{ matrix.config.android }}-${{ matrix.config.kernel }}-${{ matrix.config.sub_level }}:outcome=${{ job.status }}" >> build-results/status.txt
+
+      - name: Upload build results
+        uses: actions/upload-artifact@v7
+        with:
+          name: build-results-${{ matrix.config.android }}-${{ matrix.config.kernel }}-${{ matrix.config.sub_level }}
+          path: build-results/
+          retention-days: 1
+
   release:
     needs: [prepare, build]
     if: ${{ github.event.inputs.make_release == 'true' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    env:
+      SCRIPTS_DIR: ./.github/workflows/scripts
+      WORKSPACE_ROOT: ${{ github.workspace }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
 
       - name: Download all artifacts
         uses: actions/download-artifact@v8
         with:
           path: all-artifacts
-          pattern: '*_kernel-*'
+          pattern: 'kernel-*'
           merge-multiple: true
 
-      - name: Download build cache
+      - name: Download build results
         uses: actions/download-artifact@v8
         with:
-          pattern: 'build-cache-*'
-          path: .
+          pattern: 'build-results-*'
+          path: build-results
           merge-multiple: true
 
-      - name: Merge build caches
+      - name: Prepare build summary
+        id: prepare-summary
         run: |
-          mkdir -p ~/.ccache ~/.cache
-          for cache in build-cache-*.tar.xz; do
-            [ -f "$cache" ] && tar -xf "$cache" -C ~
-          done
+          mkdir -p build-results
+          echo "=== 构建摘要 ===" >> $GITHUB_STEP_SUMMARY
+          TOTAL=$(cat build-results/status.txt 2>/dev/null | wc -l || echo 0)
+          SUCCESS=$(grep ':outcome=success$' build-results/status.txt 2>/dev/null | wc -l || echo 0)
+          FAILED=$(grep ':outcome=failure$' build-results/status.txt 2>/dev/null | wc -l || echo 0)
+          echo "total=$TOTAL" >> $GITHUB_OUTPUT
+          echo "success=$SUCCESS" >> $GITHUB_OUTPUT
+          echo "failed=$FAILED" >> $GITHUB_OUTPUT
+          echo "| Total | Success | Failed |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|---------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| $TOTAL | $SUCCESS | $FAILED |" >> $GITHUB_STEP_SUMMARY
+          echo "=== 状态 ==="
+          cat build-results/status.txt 2>/dev/null || echo "No status file"
 
-      - name: Upload branch cache to release
-        if: success()
+      - name: Prepare release files
+        id: prepare-release-files
+        if: steps.prepare-summary.outputs.success != '0'
         run: |
-          tar -cJf build-cache-${{ github.ref_name }}.tar.xz -C ~ .ccache .cache 2>/dev/null || echo "No cache to upload"
-          if [ -f "build-cache-${{ github.ref_name }}.tar.xz" ]; then
-            echo "Branch cache created: build-cache-${{ github.ref_name }}.tar.xz"
-          fi
-
-      - name: Generate checksums
-        run: |
-          echo "=== Creating checksums ==="
-          sha256sum * > SHA256SUMS.txt
+          mkdir -p release-files
+          
+          python3 ${{ env.SCRIPTS_DIR }}/extract_artifacts.py all-artifacts release-files --build-results build-results
+          
+          ls -la release-files/
 
       - name: Generate release body
+        if: steps.prepare-summary.outputs.success != '0'
         run: |
-          cd ./.github/workflows/scripts
-          python3 release_generator.py ../../../../all-artifacts/RELEASE_BODY.md
-        working-directory: ${{ github.workspace }}
+          python3 ${{ env.SCRIPTS_DIR }}/release_generator.py ${{ env.WORKSPACE_ROOT }}/release-files/RELEASE_BODY.md
+          echo "=== 发布内容 ==="
+          cat release-files/RELEASE_BODY.md
 
       - name: Create release
-        uses: softprops/action-gh-release@v2
+        if: steps.prepare-summary.outputs.success != '0'
+        uses: softprops/action-gh-release@v3
         id: create_release
         with:
-          tag_name: v2.1.0-${{ github.run_number }}
-          name: GKI Kernel v2.1.0-${{ github.run_number }}
-          draft: true
+          tag_name: ${{ needs.prepare.outputs.kernel_version }}
+          name: GKI Kernel ${{ needs.prepare.outputs.kernel_version }}
+          draft: false
+          generate_release_notes: false
           files: |
-            *AnyKernel3*.zip
-            *.img
-            SHA256SUMS.txt
-            build-cache-${{ github.ref_name }}.tar.xz
-          body_path: all-artifacts/RELEASE_BODY.md
+            release-files/*
+          body_path: release-files/RELEASE_BODY.md
+
+      - name: Get release URL
+        if: steps.prepare-summary.outputs.success != '0'
+        id: get-release-url
+        run: |
+          RELEASE_URL="https://github.com/${{ github.repository }}/releases/tag/${{ needs.prepare.outputs.kernel_version }}"
+          echo "release_url=$RELEASE_URL" >> $GITHUB_OUTPUT
+          echo "Release URL: $RELEASE_URL"
 
       - name: Send Telegram Notification
-        if: ${{ github.event.inputs.send_telegram == 'true' && steps.create_release.conclusion == 'success' }}
+        if: ${{ github.event.inputs.send_telegram == 'true' }}
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           TELEGRAM_MESSAGE_THREAD_ID: ${{ secrets.TELEGRAM_MESSAGE_THREAD_ID }}
+          SUCCESS: ${{ steps.prepare-summary.outputs.success }}
+          FAILED: ${{ steps.prepare-summary.outputs.failed }}
         run: |
-          cd ./.github/workflows/scripts
-          python3 telegram_notify.py release \
-            "v2.1.0-${{ github.run_number }}" \
-            "https://github.com/${{ github.repository }}/releases/tag/v2.1.0-${{ github.run_number }}" \
-            "../../../../all-artifacts/RELEASE_BODY.md" \
-            "../../../../SHA256SUMS.txt"
+          # 检查是否有成功的构建
+          if [ "$SUCCESS" -gt 0 ]; then
+            python3 ${{ env.SCRIPTS_DIR }}/telegram_notify.py release \
+              "${{ needs.prepare.outputs.kernel_version }}" \
+              "${{ steps.get-release-url.outputs.release_url }}" \
+              "${{ env.WORKSPACE_ROOT }}/release-files/RELEASE_BODY.md" \
+              "" \
+              "" \
+              "$SUCCESS" \
+              "$FAILED"
+          else
+            python3 ${{ env.SCRIPTS_DIR }}/telegram_notify.py release \
+              "${{ needs.prepare.outputs.kernel_version }}" \
+              "${{ steps.get-release-url.outputs.release_url }}" \
+              "" \
+              "" \
+              "" \
+              "0" \
+              "${{ steps.prepare-summary.outputs.total }}"
+          fi
