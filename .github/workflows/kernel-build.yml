@@ -16,6 +16,8 @@ on:
           - android13
           - android14
           - android15
+          - android16
+          - android17
         default: android13
       kernel_version:
         description: 'Kernel 版本'
@@ -26,6 +28,8 @@ on:
           - "5.15"
           - "6.1"
           - "6.6"
+          - "6.12"
+          - "6.18"
         default: "5.15"
       sub_level:
         description: 'Sub Level 版本'
@@ -42,6 +46,14 @@ on:
         required: false
         type: string
         default: ''
+      page_size:
+        description: 'ARM64 Page Size (16k 仅支持 6.1/6.6/6.12/6.18)'
+        required: true
+        type: choice
+        options:
+          - 4k
+          - 16k
+        default: 4k
       kernelsu_version:
         description: 'SukiSU 版本'
         required: true
@@ -49,9 +61,15 @@ on:
         options:
           - Stable(标准)
           - Dev(开发)
+          - Custom(自定义)
         default: Stable(标准)
+      kernelsu_branch:
+        description: '自定义 SukiSU 分支 / tag / commit（仅 Custom 时使用，留空回退 builtin-new）'
+        required: false
+        type: string
+        default: ''
       kernelsu_commit:
-        description: '指定 KernelSU commit hash (可选)'
+        description: '指定 SukiSU commit (可选，优先级最高)'
         required: false
         type: string
         default: ''
@@ -90,11 +108,6 @@ on:
         required: true
         type: boolean
         default: false
-      make_release:
-        description: '创建 GitHub Release'
-        required: true
-        type: boolean
-        default: true
       send_telegram:
         description: '发送 Telegram 通知'
         required: true
@@ -132,7 +145,6 @@ jobs:
         run: |
           sudo apt update && sudo apt upgrade -y
           sudo apt install -y ccache python3 git curl wget zip unzip
-          pip install PyYAML
 
       - name: Configure ccache
         run: |
@@ -146,50 +158,47 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ~/.ccache
-          key: ${{ github.event.inputs.android_version }}-${{ github.event.inputs.kernel_version }}-${{ github.event.inputs.sub_level }}-ccache-${{ github.sha }}
+          key: ${{ github.event.inputs.android_version }}-${{ github.event.inputs.kernel_version }}-${{ github.event.inputs.sub_level }}-${{ github.event.inputs.page_size }}-ccache-${{ github.sha }}
           restore-keys: |
-            ${{ github.event.inputs.android_version }}-${{ github.event.inputs.kernel_version }}-${{ github.event.inputs.sub_level }}-ccache-
+            ${{ github.event.inputs.android_version }}-${{ github.event.inputs.kernel_version }}-${{ github.event.inputs.sub_level }}-${{ github.event.inputs.page_size }}-ccache-
 
       - name: Build kernel
-        run: |
-          cd ./.github/workflows/scripts
-
-          ARGS="--android ${{ github.event.inputs.android_version }}"
-          ARGS="$ARGS --kernel ${{ github.event.inputs.kernel_version }}"
-          ARGS="$ARGS --sub-level ${{ github.event.inputs.sub_level }}"
-          ARGS="$ARGS --os-patch ${{ github.event.inputs.os_patch_level }}"
-          [ -n "${{ github.event.inputs.revision }}" ] && ARGS="$ARGS --revision ${{ github.event.inputs.revision }}"
-          ARGS="$ARGS --ksu-version ${{ github.event.inputs.kernelsu_version }}"
-
-          [ "${{ github.event.inputs.use_zram }}" = "true" ] && ARGS="$ARGS --zram"
-          [ "${{ github.event.inputs.use_kpm }}" = "false" ] && ARGS="$ARGS --no-kpm"
-          [ "${{ github.event.inputs.BBG }}" = "true" ] && ARGS="$ARGS --bbg"
-          [ "${{ github.event.inputs.supp_op }}" = "true" ] && ARGS="$ARGS --op8e"
-          [ "${{ github.event.inputs.set_defbbr }}" = "true" ] && ARGS="$ARGS --bbr"
-          [ -z "${{ github.event.inputs.kernelsu_commit }}" ] || ARGS="$ARGS --ksu-commit=${{ github.event.inputs.kernelsu_commit }}"
-          [ -z "${{ github.event.inputs.susfs_commit }}" ] || ARGS="$ARGS --susfs-commit=${{ github.event.inputs.susfs_commit }}"
-          [ -z "${{ github.event.inputs.custom_version }}" ] || ARGS="$ARGS --custom-version=${{ github.event.inputs.custom_version }}"
-          [ "${{ github.event.inputs.make_release }}" = "true" ] || ARGS="$ARGS --no-release"
-
-          python3 build.py $ARGS
+        env:
+          ANDROID_VERSION: ${{ github.event.inputs.android_version }}
+          KERNEL_VERSION: ${{ github.event.inputs.kernel_version }}
+          SUB_LEVEL: ${{ github.event.inputs.sub_level }}
+          OS_PATCH_LEVEL: ${{ github.event.inputs.os_patch_level }}
+          REVISION: ${{ github.event.inputs.revision }}
+          PAGE_SIZE: ${{ github.event.inputs.page_size }}
+          KSU_VERSION: ${{ github.event.inputs.kernelsu_version }}
+          KSU_BRANCH: ${{ github.event.inputs.kernelsu_branch }}
+          KSU_COMMIT: ${{ github.event.inputs.kernelsu_commit }}
+          SUSFS_COMMIT: ${{ github.event.inputs.susfs_commit }}
+          CUSTOM_VERSION: ${{ github.event.inputs.custom_version }}
+          USE_ZRAM: ${{ github.event.inputs.use_zram }}
+          USE_KPM: ${{ github.event.inputs.use_kpm }}
+          USE_BBG: ${{ github.event.inputs.BBG }}
+          USE_OP8E: ${{ github.event.inputs.supp_op }}
+          SET_DEF_BBR: ${{ github.event.inputs.set_defbbr }}
+        run: python3 ./.github/workflows/scripts/build.py --from-env
 
       - name: Prepare artifacts
         run: |
           mkdir -p artifacts
           find /tmp/gki-build -name "*.zip" -type f -exec cp {} artifacts/ \;
           find /tmp/gki-build -name "*.img" -type f -exec cp {} artifacts/ \;
+          find /tmp/gki-build -name "build-info-*.json" -type f -exec cp {} artifacts/ \;
+          cd artifacts
+          find . -maxdepth 1 -type f \( -name '*.zip' -o -name '*.img' \) -printf '%P\n' \
+            | sort | xargs -r sha256sum > SHA256SUMS.txt
+          cd ..
+          ls -la artifacts/
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v7
         with:
-          name: kernel-${{ github.event.inputs.android_version }}-${{ github.event.inputs.kernel_version }}-${{ github.event.inputs.sub_level }}
+          name: kernel-${{ github.event.inputs.android_version }}-${{ github.event.inputs.kernel_version }}-${{ github.event.inputs.sub_level }}${{ github.event.inputs.page_size == '16k' && '-16k' || '' }}
           path: artifacts/*
-
-      - name: Generate checksums
-        run: |
-          echo "=== Creating checksums ==="
-          sha256sum artifacts/* > SHA256SUMS.txt
-          cat SHA256SUMS.txt
 
       - name: Send Telegram Notification
         if: ${{ github.event.inputs.send_telegram == 'true' && success() }}
@@ -197,14 +206,30 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           TELEGRAM_MESSAGE_THREAD_ID: ${{ secrets.TELEGRAM_MESSAGE_THREAD_ID }}
+          KSU_BRANCH_INPUT: ${{ github.event.inputs.kernelsu_branch }}
+          KSU_COMMIT_INPUT: ${{ github.event.inputs.kernelsu_commit }}
+          SUB_LEVEL_INPUT: ${{ github.event.inputs.sub_level }}
+          OS_PATCH_INPUT: ${{ github.event.inputs.os_patch_level }}
         run: |
-          cd ./.github/workflows/scripts
-          python3 telegram_notify.py single \
-            "${{ github.event.inputs.android_version }}" \
-            "${{ github.event.inputs.kernel_version }}" \
-            "${{ github.event.inputs.sub_level }}" \
-            "${{ github.event.inputs.os_patch_level }}" \
-            "${{ github.event.inputs.kernelsu_version }}" \
-            "${{ github.event.inputs.use_zram }}" \
-            "${{ github.event.inputs.use_kpm }}" \
-            "../../SHA256SUMS.txt"
+          KSU_REF=""
+          BUILD_INFO=$(find /tmp/gki-build -name 'build-info-*.json' -print -quit)
+          if [ -n "$BUILD_INFO" ]; then
+            KSU_REF=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["ksu"]["resolved_ref"])' "$BUILD_INFO")
+          fi
+          if [ -z "$KSU_REF" ]; then
+            KSU_REF="$KSU_BRANCH_INPUT"
+          fi
+          if [ -z "$KSU_REF" ]; then
+            KSU_REF="$KSU_COMMIT_INPUT"
+          fi
+          python3 ./.github/workflows/scripts/telegram_notify.py single \
+            --android "${{ github.event.inputs.android_version }}" \
+            --kernel "${{ github.event.inputs.kernel_version }}" \
+            --sub-level "$SUB_LEVEL_INPUT" \
+            --os-patch "$OS_PATCH_INPUT" \
+            --ksu-version "${{ github.event.inputs.kernelsu_version }}" \
+            --ksu-ref "$KSU_REF" \
+            --zram "${{ github.event.inputs.use_zram }}" \
+            --kpm "${{ github.event.inputs.use_kpm }}" \
+            --page-size "${{ github.event.inputs.page_size }}" \
+            --hashes "$GITHUB_WORKSPACE/artifacts/SHA256SUMS.txt"

@@ -1,15 +1,21 @@
 #!/usr/bin/env python3
+"""Telegram 构建通知。
+
+用法:
+    telegram_notify.py single --android android14 --kernel 6.1 ...
+    telegram_notify.py release --tag v2.4.0 --url ... --success 5 --failed 1
 """
-Telegram 通知脚本
-用于发送构建完成/发布通知到 Telegram
-"""
-import os
-import sys
-import ssl
+import argparse
 import json
-import hashlib
+import os
+import ssl
+import sys
 import urllib.request
-from pathlib import Path
+import uuid
+
+
+def as_bool(value) -> bool:
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
 
 
 class TelegramNotifier:
@@ -17,137 +23,118 @@ class TelegramNotifier:
         self.bot_token = bot_token or os.environ.get("TELEGRAM_BOT_TOKEN", "")
         self.chat_id = chat_id or os.environ.get("TELEGRAM_CHAT_ID", "")
         self.thread_id = thread_id or os.environ.get("TELEGRAM_MESSAGE_THREAD_ID", "")
-
         self.ssl_ctx = ssl.create_default_context()
-        self.ssl_ctx.check_hostname = False
-        self.ssl_ctx.verify_mode = ssl.CERT_NONE
 
-    def send_message(self, message: str, parse_mode: str = "HTML", disable_web_page_preview: bool = True) -> bool:
-        """发送消息到 Telegram"""
+    def _post(self, method: str, data: bytes, content_type: str) -> bool:
+        url = f"https://api.telegram.org/bot{self.bot_token}/{method}"
+        request = urllib.request.Request(
+            url, data=data, headers={"Content-Type": content_type}
+        )
+        try:
+            with urllib.request.urlopen(request, context=self.ssl_ctx, timeout=30) as response:
+                result = json.loads(response.read())
+        except Exception as e:
+            print(f"请求失败: {e}")
+            return False
+        if result.get("ok"):
+            print(f"发送成功 (message_id: {result['result'].get('message_id')})")
+            return True
+        print(f"发送失败: {result.get('description')}")
+        return False
+
+    def send_message(self, message: str, parse_mode: str = "HTML",
+                     disable_web_page_preview: bool = True) -> bool:
         if not self.bot_token or not self.chat_id:
             print("错误: 缺少 TELEGRAM_BOT_TOKEN 或 TELEGRAM_CHAT_ID")
             return False
 
-        url = f"https://api.telegram.org/bot{self.bot_token}/sendMessage"
-
-        data = {
+        payload = {
             "chat_id": self.chat_id,
             "text": message,
             "parse_mode": parse_mode,
             "disable_web_page_preview": disable_web_page_preview,
         }
-
         if self.thread_id:
-            data["message_thread_id"] = self.thread_id
-
-        try:
-            req = urllib.request.Request(
-                url,
-                data=json.dumps(data).encode("utf-8"),
-                headers={"Content-Type": "application/json"},
-            )
-            with urllib.request.urlopen(req, context=self.ssl_ctx) as response:
-                result = json.loads(response.read())
-                if result.get("ok"):
-                    print(f"消息发送成功 (message_id: {result['result']['message_id']})")
-                    return True
-                else:
-                    print(f"发送失败: {result.get('description')}")
-                    return False
-        except Exception as e:
-            print(f"请求失败: {e}")
-            return False
+            payload["message_thread_id"] = self.thread_id
+        return self._post(
+            "sendMessage",
+            json.dumps(payload).encode("utf-8"),
+            "application/json",
+        )
 
     def send_document(self, file_path: str, caption: str = None) -> bool:
-        """发送文件到 Telegram"""
         if not self.bot_token or not self.chat_id:
             print("错误: 缺少 TELEGRAM_BOT_TOKEN 或 TELEGRAM_CHAT_ID")
             return False
-
         if not os.path.exists(file_path):
             print(f"文件不存在: {file_path}")
             return False
 
-        url = f"https://api.telegram.org/bot{self.bot_token}/sendDocument"
-
-        try:
-            with open(file_path, "rb") as f:
-                import multipart
-
-                form = multipart.MultipartForm()
-                form.add_field("chat_id", self.chat_id)
-                if self.thread_id:
-                    form.add_field("message_thread_id", self.thread_id)
-                if caption:
-                    form.add_field("caption", caption)
-                    form.add_field("parse_mode", "HTML")
-                form.add_file("document", os.path.basename(file_path), f)
-
-                req = urllib.request.Request(
-                    url,
-                    data=form.get_binary(),
-                    headers={"Content-Type": form.get_content_type()},
-                )
-                with urllib.request.urlopen(req, context=self.ssl_ctx) as response:
-                    result = json.loads(response.read())
-                    if result.get("ok"):
-                        print(f"文件发送成功 (message_id: {result['result']['message_id']})")
-                        return True
-                    else:
-                        print(f"文件发送失败: {result.get('description')}")
-                        return False
-        except ImportError:
-            print("需要安装 multipart 库: pip install python-multipart")
-            return False
-        except Exception as e:
-            print(f"文件发送失败: {e}")
-            return False
-
-
-def calculate_file_hashes(file_path: str) -> dict:
-    """计算文件的 SHA256 和 MD5 hash"""
-    hashes = {"sha256": "", "md5": ""}
-    try:
-        sha256_hash = hashlib.sha256()
-        md5_hash = hashlib.md5()
         with open(file_path, "rb") as f:
-            for byte_block in iter(lambda: f.read(4096), b""):
-                sha256_hash.update(byte_block)
-                md5_hash.update(byte_block)
-        hashes["sha256"] = sha256_hash.hexdigest()
-        hashes["md5"] = md5_hash.hexdigest()
-    except Exception as e:
-        print(f"计算 hash 失败: {e}")
-    return hashes
+            file_data = f.read()
+
+        fields = {"chat_id": self.chat_id}
+        if self.thread_id:
+            fields["message_thread_id"] = self.thread_id
+        if caption:
+            fields["caption"] = caption
+            fields["parse_mode"] = "HTML"
+
+        body, content_type = _encode_multipart(
+            fields, "document", os.path.basename(file_path), file_data
+        )
+        return self._post("sendDocument", body, content_type)
+
+
+def _encode_multipart(fields: dict, file_field: str, file_name: str,
+                      file_data: bytes) -> tuple:
+    boundary = f"----gki-build-{uuid.uuid4().hex}"
+    chunks = []
+    for name, value in fields.items():
+        chunks.append(
+            (
+                f'--{boundary}\r\n'
+                f'Content-Disposition: form-data; name="{name}"\r\n\r\n'
+                f'{value}\r\n'
+            ).encode("utf-8")
+        )
+    chunks.append(
+        (
+            f'--{boundary}\r\n'
+            f'Content-Disposition: form-data; name="{file_field}"; filename="{file_name}"\r\n'
+            f'Content-Type: application/octet-stream\r\n\r\n'
+        ).encode("utf-8")
+        + file_data
+        + b"\r\n"
+    )
+    chunks.append(f"--{boundary}--\r\n".encode("utf-8"))
+    return b"".join(chunks), f"multipart/form-data; boundary={boundary}"
 
 
 def parse_sha256sums(file_path: str) -> list:
-    """解析 SHA256SUMS 文件"""
     files = []
-    if os.path.exists(file_path):
-        with open(file_path, "r") as f:
-            for line in f:
-                line = line.strip()
-                if line:
-                    parts = line.split(None, 1)
-                    if len(parts) == 2:
-                        hash_value = parts[0]
-                        filename = parts[1]
-                        files.append({"hash": hash_value, "filename": filename})
+    if not file_path or not os.path.exists(file_path):
+        return files
+    with open(file_path, "r", encoding="utf-8") as f:
+        for line in f:
+            parts = line.strip().split(None, 1)
+            if len(parts) == 2:
+                files.append({"hash": parts[0], "filename": parts[1]})
     return files
 
 
-def build_single_notify_message(
-    android_version: str,
-    kernel_version: str,
-    sub_level: str,
-    os_patch_level: str,
-    kernelsu_version: str,
-    use_zram: bool,
-    use_kpm: bool,
-    hashes_file: str = None,
-) -> str:
-    """生成单版本构建完成通知消息"""
+KSU_REF_BY_VERSION = {
+    "Stable(标准)": "builtin",
+    "Dev(开发)": "builtin-new",
+}
+
+
+def build_single_notify_message(android_version: str, kernel_version: str,
+                                sub_level: str, os_patch_level: str,
+                                kernelsu_version: str, kernelsu_ref: str,
+                                use_zram: bool, use_kpm: bool,
+                                page_size: str = "4k",
+                                hashes_file: str = None) -> str:
     message = f"""✅ <b>内核构建成功</b>
 
 <b>📱 Android:</b> {android_version}
@@ -155,149 +142,132 @@ def build_single_notify_message(
 <b>📌 Sub Level:</b> {sub_level}
 <b>📅 OS Patch:</b> {os_patch_level}
 
-<b>💾 SukiSU 版本:</b> {kernelsu_version}
+<b>💾 SukiSU 版本:</b> {kernelsu_version}"""
+    if kernelsu_ref:
+        message += f"\n<b>🌿 SukiSU 分支:</b> {kernelsu_ref}"
+    if page_size == "16k":
+        message += "\n<b>📐 Page Size:</b> 16K"
+    message += f"""
 <b>🔧 ZRAM:</b> {"启用" if use_zram else "禁用"}
 <b>📦 KPM:</b> {"启用" if use_kpm else "禁用"}"""
 
-    # 添加文件 hash 信息
-    if hashes_file and os.path.exists(hashes_file):
-        files = parse_sha256sums(hashes_file)
-        if files:
-            message += "\n\n<b>📋 文件校验 (SHA256):</b>"
-            for file_info in files:
-                filename = os.path.basename(file_info["filename"])
-                file_hash = file_info["hash"]
-                message += f"\n<code>{filename}</code>"
-                message += f"\n<code>{file_hash}</code>"
-
+    files = parse_sha256sums(hashes_file)
+    if files:
+        message += "\n\n<b>📋 文件校验 (SHA256):</b>"
+        for file_info in files:
+            message += (
+                f"\n<code>{os.path.basename(file_info['filename'])}</code>"
+                f"\n<code>{file_info['hash']}</code>"
+            )
     return message
 
 
-def build_release_notify_message(
-    release_tag: str,
-    release_url: str,
-    release_notes: str = None,
-    hashes_file: str = None,
-    status_file: str = None,
-    success_count: str = None,
-    failed_count: str = None,
-) -> str:
-    """生成新版本发布通知消息"""
+def build_release_notify_message(release_tag: str, release_url: str,
+                                 release_notes: str = None, hashes_file: str = None,
+                                 success_count: str = None,
+                                 failed_count: str = None) -> str:
     message = f"""🎉 <b>构建完成!</b>
 
-📦 <b>版本:</b> {release_tag}
-🔗 <b>下载:</b> <a href="{release_url}">点击下载</a>"""
+📦 <b>版本:</b> {release_tag}"""
+    if release_url:
+        message += f'\n🔗 <b>下载:</b> <a href="{release_url}">点击下载</a>'
 
-    # 添加构建统计
-    success = int(success_count) if success_count and success_count.isdigit() else 0
-    failed = int(failed_count) if failed_count and failed_count.isdigit() else 0
+    success = int(success_count) if str(success_count).isdigit() else 0
+    failed = int(failed_count) if str(failed_count).isdigit() else 0
     total = success + failed
-
     if total > 0:
-        success_emoji = "✅" if success == total else "⚠️"
+        emoji = "✅" if success == total else "⚠️"
         message += f"""
 
-{success_emoji} <b>构建统计:</b>
+{emoji} <b>构建统计:</b>
 ✅ 成功: {success}/{total}
 ❌ 失败: {failed}/{total}"""
 
-    # 添加完整的发布说明
     if release_notes:
         message += f"""
 
 📝 <b>更新内容:</b>
 {release_notes}"""
 
-    # 添加文件 hash 信息
-    if hashes_file and os.path.exists(hashes_file):
-        files = parse_sha256sums(hashes_file)
-        if files:
-            message += "\n\n<b>📋 文件校验 (SHA256):</b>"
-            for file_info in files:
-                filename = os.path.basename(file_info["filename"])
-                file_hash = file_info["hash"]
-                message += f"\n<code>{filename}</code>"
-                message += f"\n<code>{file_hash}</code>"
-
+    files = parse_sha256sums(hashes_file)
+    if files:
+        message += "\n\n<b>📋 文件校验 (SHA256):</b>"
+        for file_info in files:
+            message += (
+                f"\n<code>{os.path.basename(file_info['filename'])}</code>"
+                f"\n<code>{file_info['hash']}</code>"
+            )
     return message
 
 
-def main():
-    if len(sys.argv) < 2:
-        print("用法:")
-        print("  python telegram_notify.py single <android> <kernel> <sub_level> <os_patch> <ksu_version> <zram> <kpm> [hashes_file]")
-        print("  python telegram_notify.py release <tag> <url> [notes_file] [hashes_file]")
-        sys.exit(1)
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="Telegram 构建通知")
+    sub = parser.add_subparsers(dest="action", required=True)
 
+    single = sub.add_parser("single", help="单版本构建通知")
+    single.add_argument("--android", required=True)
+    single.add_argument("--kernel", required=True)
+    single.add_argument("--sub-level", required=True)
+    single.add_argument("--os-patch", required=True)
+    single.add_argument("--ksu-version", required=True)
+    single.add_argument("--ksu-ref", default="")
+    single.add_argument("--zram", default="false")
+    single.add_argument("--kpm", default="true")
+    single.add_argument("--page-size", default="4k")
+    single.add_argument("--hashes", default=None)
+
+    release = sub.add_parser("release", help="Release 通知")
+    release.add_argument("--tag", required=True)
+    release.add_argument("--url", default="")
+    release.add_argument("--notes-file", default=None)
+    release.add_argument("--hashes", default=None)
+    release.add_argument("--success", default="0")
+    release.add_argument("--failed", default="0")
+
+    return parser
+
+
+def main() -> int:
+    args = build_parser().parse_args()
     notifier = TelegramNotifier()
-    action = sys.argv[1]
 
-    if action == "single":
-        if len(sys.argv) < 8:
-            print("错误: single 需要 7 个参数")
-            sys.exit(1)
-
-        hashes_file = sys.argv[8] if len(sys.argv) > 8 else None
-        if hashes_file and not os.path.exists(hashes_file):
-            hashes_file = None
-
+    if args.action == "single":
+        ksu_ref = args.ksu_ref or KSU_REF_BY_VERSION.get(args.ksu_version, "")
         message = build_single_notify_message(
-            android_version=sys.argv[2],
-            kernel_version=sys.argv[3],
-            sub_level=sys.argv[4],
-            os_patch_level=sys.argv[5],
-            kernelsu_version=sys.argv[6],
-            use_zram=sys.argv[7].lower() == "true",
-            use_kpm=True,
-            hashes_file=hashes_file,
+            android_version=args.android,
+            kernel_version=args.kernel,
+            sub_level=args.sub_level,
+            os_patch_level=args.os_patch,
+            kernelsu_version=args.ksu_version,
+            kernelsu_ref=ksu_ref,
+            use_zram=as_bool(args.zram),
+            use_kpm=as_bool(args.kpm),
+            page_size=args.page_size,
+            hashes_file=args.hashes,
         )
-        success = notifier.send_message(message)
+        sent = notifier.send_message(message)
+        if args.hashes:
+            notifier.send_document(args.hashes, "SHA256SUMS")
+        return 0 if sent else 1
 
-        if hashes_file:
-            notifier.send_document(hashes_file, "SHA256SUMS")
+    notes = ""
+    if args.notes_file and os.path.exists(args.notes_file):
+        with open(args.notes_file, "r", encoding="utf-8") as f:
+            notes = f.read()
 
-    elif action == "release":
-        if len(sys.argv) < 4:
-            print("错误: release 需要 <tag> <url> [notes_file] [hashes_file] [status_file] [success_count] [failed_count]")
-            sys.exit(1)
-
-        tag = sys.argv[2]
-        url = sys.argv[3]
-        notes = ""
-        hashes_file = None
-        status_file = None
-        success_count = None
-        failed_count = None
-
-        # 解析可选参数
-        for arg in sys.argv[4:]:
-            if os.path.exists(arg):
-                if arg.endswith(".md"):
-                    with open(arg, "r", encoding="utf-8") as f:
-                        notes = f.read()
-                elif arg.endswith(".txt"):
-                    if "status" in arg:
-                        status_file = arg
-                    else:
-                        hashes_file = arg
-            elif arg.isdigit():
-                if success_count is None:
-                    success_count = arg
-                else:
-                    failed_count = arg
-
-        message = build_release_notify_message(tag, url, notes, hashes_file, status_file, success_count, failed_count)
-        success = notifier.send_message(message)
-
-        if hashes_file:
-            notifier.send_document(hashes_file, "SHA256SUMS")
-
-    else:
-        print(f"未知操作: {action}")
-        sys.exit(1)
-
-    sys.exit(0 if success else 1)
+    message = build_release_notify_message(
+        release_tag=args.tag,
+        release_url=args.url,
+        release_notes=notes,
+        hashes_file=args.hashes,
+        success_count=args.success,
+        failed_count=args.failed,
+    )
+    sent = notifier.send_message(message)
+    if args.hashes:
+        notifier.send_document(args.hashes, "SHA256SUMS")
+    return 0 if sent else 1
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

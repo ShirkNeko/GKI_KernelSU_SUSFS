@@ -21,7 +21,11 @@ def is_release_file(filename: str) -> bool:
 def process_artifacts(artifacts_dir: str, output_dir: str, build_results_dir: str = None):
     """从 artifact zip 中提取发布文件"""
     os.makedirs(output_dir, exist_ok=True)
-    
+
+    if not os.path.isdir(artifacts_dir):
+        print(f"目录不存在，跳过: {artifacts_dir}")
+        return
+
     for name in os.listdir(artifacts_dir):
         path = os.path.join(artifacts_dir, name)
         
@@ -69,9 +73,12 @@ def process_artifacts(artifacts_dir: str, output_dir: str, build_results_dir: st
                 continue
             try:
                 with open(txt_file, 'r') as f:
-                    content = f.read().strip()
-                    if content:
-                        sha256sums.append(content)
+                    lines = [
+                        line.strip() for line in f
+                        if line.strip() and 'build-info-' not in line
+                    ]
+                    if lines:
+                        sha256sums.append('\n'.join(lines))
             except Exception:
                 pass
         

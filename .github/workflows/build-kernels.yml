@@ -14,9 +14,15 @@ on:
         options:
           - Stable(标准)
           - Dev(开发)
+          - Custom(自定义)
         default: Stable(标准)
+      kernelsu_branch:
+        description: '自定义 SukiSU 分支 / tag / commit（仅 Custom 时使用，留空回退 builtin-new）'
+        required: false
+        type: string
+        default: ''
       kernelsu_commit:
-        description: '指定 SukiSU commit hash (可选，留空使用最新)'
+        description: '指定 SukiSU commit (可选，优先级最高)'
         required: false
         type: string
         default: ''
@@ -65,18 +71,13 @@ jobs:
     env:
       SCRIPTS_DIR: ./.github/workflows/scripts
     outputs:
-      build_matrix: ${{ steps.generate.outputs.matrix }}
+      build_matrix: ${{ steps.generate.outputs.build_matrix }}
       kernel_version: ${{ steps.generate.outputs.kernel_version }}
       classified_matrix: ${{ steps.generate.outputs.classified_matrix }}
       matrix_summary: ${{ steps.generate.outputs.matrix_summary }}
-      cache_key: ${{ steps.get_cache_key.outputs.cache_key }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
-
-      - name: Get cache key
-        id: get_cache_key
-        run: echo "cache_key=${{ github.ref_name }}-ccache" >> $GITHUB_OUTPUT
 
       - name: Generate build matrix
         id: generate
@@ -116,7 +117,6 @@ jobs:
         run: |
           sudo apt update && sudo apt upgrade -y
           sudo apt install -y ccache python3 git curl wget zip unzip xz-utils openssl pixz
-          pip install PyYAML
 
       - name: Setup AVB signing key
         env:
@@ -140,35 +140,32 @@ jobs:
         uses: ./.github/actions/cache-restore
         with:
           cache_path: /home/runner/.ccache
-          cache_key: ${{ github.ref_name }}-${{ matrix.config.android }}-${{ matrix.config.kernel }}-${{ matrix.config.sub_level }}
+          cache_key: ${{ github.ref_name }}-${{ matrix.config.android }}-${{ matrix.config.kernel }}-${{ matrix.config.label }}
           cache_bucket: ccache-cache
 
       - name: Build kernel
-        run: |
-          cd ${{ env.SCRIPTS_DIR }}
-
-          ARGS="--android ${{ matrix.config.android }}"
-          ARGS="$ARGS --kernel ${{ matrix.config.kernel }}"
-          ARGS="$ARGS --sub-level ${{ matrix.config.sub_level }}"
-          ARGS="$ARGS --os-patch ${{ matrix.config.os_patch }}"
-          [ -n "${{ matrix.config.revision }}" ] && ARGS="$ARGS --revision ${{ matrix.config.revision }}"
-          ARGS="$ARGS --ksu-version ${{ github.event.inputs.kernelsu_version }}"
-          ARGS="$ARGS --no-release"
-
-          [ "${{ github.event.inputs.use_zram }}" = "true" ] && ARGS="$ARGS --zram"
-          [ "${{ github.event.inputs.use_kpm }}" = "false" ] && ARGS="$ARGS --no-kpm"
-          [ "${{ github.event.inputs.BBG }}" = "true" ] && ARGS="$ARGS --bbg"
-          [ -z "${{ github.event.inputs.kernelsu_commit }}" ] || ARGS="$ARGS --ksu-commit=${{ github.event.inputs.kernelsu_commit }}"
-          [ -z "${{ github.event.inputs.susfs_commit }}" ] || ARGS="$ARGS --susfs-commit=${{ github.event.inputs.susfs_commit }}"
-          [ -z "${{ github.event.inputs.custom_version }}" ] || ARGS="$ARGS --custom-version=${{ github.event.inputs.custom_version }}"
-
-          python3 build.py $ARGS
+        env:
+          ANDROID_VERSION: ${{ matrix.config.android }}
+          KERNEL_VERSION: ${{ matrix.config.kernel }}
+          SUB_LEVEL: ${{ matrix.config.sub_level }}
+          OS_PATCH_LEVEL: ${{ matrix.config.os_patch }}
+          REVISION: ${{ matrix.config.revision }}
+          KSU_VERSION: ${{ github.event.inputs.kernelsu_version }}
+          KSU_BRANCH: ${{ github.event.inputs.kernelsu_branch }}
+          KSU_COMMIT: ${{ github.event.inputs.kernelsu_commit }}
+          SUSFS_COMMIT: ${{ github.event.inputs.susfs_commit }}
+          CUSTOM_VERSION: ${{ github.event.inputs.custom_version }}
+          USE_ZRAM: ${{ github.event.inputs.use_zram }}
+          USE_KPM: ${{ github.event.inputs.use_kpm }}
+          USE_BBG: ${{ github.event.inputs.BBG }}
+          PAGE_SIZE: ${{ matrix.config.page_size }}
+        run: python3 ${{ env.SCRIPTS_DIR }}/build.py --from-env
 
       - name: Save ccache
         uses: ./.github/actions/cache-save
         with:
           cache_path: /home/runner/.ccache
-          cache_key: ${{ github.ref_name }}-${{ matrix.config.android }}-${{ matrix.config.kernel }}-${{ matrix.config.sub_level }}
+          cache_key: ${{ github.ref_name }}-${{ matrix.config.android }}-${{ matrix.config.kernel }}-${{ matrix.config.label }}
           cache_bucket: ccache-cache
           github_token: ${{ secrets.GITHUB_TOKEN }}
 
@@ -178,44 +175,46 @@ jobs:
           mkdir -p artifacts
           find /tmp/gki-build -name "*.zip" -type f -exec cp {} artifacts/ \;
           find /tmp/gki-build -name "*.img" -type f -exec cp {} artifacts/ \;
+          find /tmp/gki-build -name "build-info-*.json" -type f -exec cp {} artifacts/ \;
           if [ -z "$(ls -A artifacts/)" ]; then
             echo "没有找到构建产物"
             echo "artifacts_exist=false" >> $GITHUB_OUTPUT
           else
             echo "artifacts_exist=true" >> $GITHUB_OUTPUT
             ls -la artifacts/
-            # 生成 SHA256SUMS
-            cd artifacts && sha256sum * > SHA256SUMS.txt && cd ..
+            cd artifacts
+            find . -maxdepth 1 -type f \( -name '*.zip' -o -name '*.img' \) -printf '%P\n' \
+              | sort | xargs -r sha256sum > SHA256SUMS.txt
+            cd ..
           fi
 
       - name: Upload artifacts
         if: steps.prepare-artifacts.outputs.artifacts_exist == 'true'
         uses: actions/upload-artifact@v7
         with:
-          name: kernel-${{ matrix.config.android }}-${{ matrix.config.kernel }}-${{ matrix.config.sub_level }}
+          name: kernel-${{ matrix.config.android }}-${{ matrix.config.kernel }}-${{ matrix.config.label }}
           path: artifacts/*
 
       - name: Record build result
         if: always()
         run: |
           mkdir -p build-results
-          # 复制 SHA256SUMS
           if [ -f "artifacts/SHA256SUMS.txt" ]; then
-            cp artifacts/SHA256SUMS.txt build-results/${{ matrix.config.android }}-${{ matrix.config.kernel }}-${{ matrix.config.sub_level }}.txt
+            cp artifacts/SHA256SUMS.txt build-results/${{ matrix.config.android }}-${{ matrix.config.kernel }}-${{ matrix.config.label }}.txt
           fi
-          # 记录构建状态
-          echo "${{ matrix.config.android }}-${{ matrix.config.kernel }}-${{ matrix.config.sub_level }}:outcome=${{ job.status }}" >> build-results/status.txt
+          echo "${{ matrix.config.android }}-${{ matrix.config.kernel }}-${{ matrix.config.label }}:outcome=${{ job.status }}" >> build-results/status.txt
 
       - name: Upload build results
+        if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: build-results-${{ matrix.config.android }}-${{ matrix.config.kernel }}-${{ matrix.config.sub_level }}
+          name: build-results-${{ matrix.config.android }}-${{ matrix.config.kernel }}-${{ matrix.config.label }}
           path: build-results/
           retention-days: 1
 
   release:
     needs: [prepare, build]
-    if: ${{ github.event.inputs.make_release == 'true' }}
+    if: ${{ always() && needs.prepare.result == 'success' && github.event.inputs.make_release == 'true' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -231,7 +230,8 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
-      - name: Download all artifacts
+      - name: Download kernel artifacts
+        continue-on-error: true
         uses: actions/download-artifact@v8
         with:
           path: all-artifacts
@@ -239,6 +239,7 @@ jobs:
           merge-multiple: true
 
       - name: Download build results
+        continue-on-error: true
         uses: actions/download-artifact@v8
         with:
           pattern: 'build-results-*'
@@ -248,7 +249,7 @@ jobs:
       - name: Prepare build summary
         id: prepare-summary
         run: |
-          mkdir -p build-results
+          mkdir -p build-results all-artifacts
           echo "=== 构建摘要 ===" >> $GITHUB_STEP_SUMMARY
           TOTAL=$(cat build-results/status.txt 2>/dev/null | wc -l || echo 0)
           SUCCESS=$(grep ':outcome=success$' build-results/status.txt 2>/dev/null | wc -l || echo 0)
@@ -263,19 +264,16 @@ jobs:
           cat build-results/status.txt 2>/dev/null || echo "No status file"
 
       - name: Prepare release files
-        id: prepare-release-files
         if: steps.prepare-summary.outputs.success != '0'
         run: |
           mkdir -p release-files
-          
           python3 ${{ env.SCRIPTS_DIR }}/extract_artifacts.py all-artifacts release-files --build-results build-results
-          
           ls -la release-files/
 
       - name: Generate release body
         if: steps.prepare-summary.outputs.success != '0'
         run: |
-          python3 ${{ env.SCRIPTS_DIR }}/release_generator.py ${{ env.WORKSPACE_ROOT }}/release-files/RELEASE_BODY.md
+          python3 ${{ env.SCRIPTS_DIR }}/release_generator.py release-files/RELEASE_BODY.md --build-info-dir all-artifacts
           echo "=== 发布内容 ==="
           cat release-files/RELEASE_BODY.md
 
@@ -309,23 +307,14 @@ jobs:
           SUCCESS: ${{ steps.prepare-summary.outputs.success }}
           FAILED: ${{ steps.prepare-summary.outputs.failed }}
         run: |
-          # 检查是否有成功的构建
-          if [ "$SUCCESS" -gt 0 ]; then
-            python3 ${{ env.SCRIPTS_DIR }}/telegram_notify.py release \
-              "${{ needs.prepare.outputs.kernel_version }}" \
-              "${{ steps.get-release-url.outputs.release_url }}" \
-              "${{ env.WORKSPACE_ROOT }}/release-files/RELEASE_BODY.md" \
-              "" \
-              "" \
-              "$SUCCESS" \
-              "$FAILED"
-          else
-            python3 ${{ env.SCRIPTS_DIR }}/telegram_notify.py release \
-              "${{ needs.prepare.outputs.kernel_version }}" \
-              "${{ steps.get-release-url.outputs.release_url }}" \
-              "" \
-              "" \
-              "" \
-              "0" \
-              "${{ steps.prepare-summary.outputs.total }}"
+          HASHS_ARG=""
+          if [ -f release-files/SHA256SUMS.txt ]; then
+            HASHS_ARG="--hashes release-files/SHA256SUMS.txt"
           fi
+          python3 ${{ env.SCRIPTS_DIR }}/telegram_notify.py release \
+            --tag "${{ needs.prepare.outputs.kernel_version }}" \
+            --url "${{ steps.get-release-url.outputs.release_url }}" \
+            --notes-file release-files/RELEASE_BODY.md \
+            $HASHS_ARG \
+            --success "${SUCCESS:-0}" \
+            --failed "${FAILED:-0}"
