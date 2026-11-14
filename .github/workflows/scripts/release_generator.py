@@ -13,7 +13,12 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from config import get_susfs_version  # noqa: E402
+from config import (  # noqa: E402
+    KPM_PATCH_SDK_VERSION,
+    KPM_SUPPORTED_KERNELS,
+    KPM_TOOLS_VERSION,
+    get_susfs_version,
+)
 from matrix import load_matrix  # noqa: E402
 
 
@@ -34,9 +39,15 @@ def load_build_infos(directory) -> list:
 
 
 class ReleaseGenerator:
-    def __init__(self, build_info_dir=None):
+    def __init__(self, build_info_dir=None, use_zram: bool = False,
+                 set_default_bbr: bool = False, use_susfs: bool = True,
+                 use_kpm: bool = True):
         self.build_infos = load_build_infos(build_info_dir)
         self.ssl_ctx = ssl.create_default_context()
+        self.use_zram = bool(use_zram)
+        self.set_default_bbr = bool(set_default_bbr)
+        self.use_susfs = bool(use_susfs)
+        self.use_kpm = bool(use_kpm)
 
     def _fetch_json(self, url: str) -> dict:
         try:
@@ -82,7 +93,16 @@ class ReleaseGenerator:
     def generate_body(self) -> str:
         matrix = load_matrix()
         ksu = self.get_ksu_info()
-        susfs_version = get_susfs_version()
+
+        use_susfs = self.use_susfs
+        if self.build_infos:
+            infos = [i.get("config", {}).get("use_susfs") for i in self.build_infos]
+            if any(value is not None for value in infos):
+                use_susfs = any(value for value in infos if value is not None)
+        susfs_version = get_susfs_version() if use_susfs else ""
+        title = "## GKI Kernel with SukiSU"
+        if use_susfs:
+            title += f" & SUSFS {susfs_version}"
 
         configurations = [
             f"- Android {key.split('-', 1)[0].replace('android', '')} "
@@ -92,7 +112,7 @@ class ReleaseGenerator:
         ]
 
         lines = [
-            f"## GKI Kernel with SukiSU & SUSFS {susfs_version}",
+            title,
             "",
             "### SukiSU Info",
         ]
@@ -101,18 +121,46 @@ class ReleaseGenerator:
         if ksu.get("ref"):
             lines.append(f"- Ref: `{ksu['ref']}`")
         lines.append(f"- Commit: `{ksu['commit']}`")
+        use_zram = self.use_zram or any(
+            i.get("config", {}).get("use_zram") for i in self.build_infos
+        )
+        set_default_bbr = self.set_default_bbr or any(
+            i.get("config", {}).get("set_default_bbr") for i in self.build_infos
+        )
+        features = []
+        if use_susfs:
+            features.append(f"- SUSFS {susfs_version}")
+        use_kpm = self.use_kpm
+        if self.build_infos:
+            infos = [i.get("config", {}).get("use_kpm") for i in self.build_infos]
+            if any(value is not None for value in infos):
+                use_kpm = any(value for value in infos if value is not None)
+        if use_kpm:
+            kernels = [
+                kernel
+                for kernel in KPM_SUPPORTED_KERNELS
+                if any(key.endswith(f"-{kernel}") for key in matrix)
+            ] or list(KPM_SUPPORTED_KERNELS)
+            features.append(
+                f"- KPM {KPM_TOOLS_VERSION} "
+                f"(SDK {KPM_PATCH_SDK_VERSION}, Kernel {' / '.join(kernels)})"
+            )
+        if set_default_bbr:
+            features.append("- BBR Support")
+        if use_zram:
+            features.append("- LZ4KD Support")
+
         lines.extend([
             "",
             "### Supported Configurations",
             *configurations,
-            "",
-            "### Features",
-            f"- SUSFS {susfs_version}",
-            "- Manual Syscall Hooks",
-            "- Magic Mount Support",
-            "- BBR Support",
-            "- LZ4KD Support",
         ])
+        if features:
+            lines.extend([
+                "",
+                "### Features",
+                *features,
+            ])
         return "\n".join(lines)
 
     def save_body(self, output_path: str = "RELEASE_BODY.md"):
@@ -123,13 +171,31 @@ class ReleaseGenerator:
         print(body)
 
 
+def _bool_arg(value) -> bool:
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="生成 Release 发布说明")
     parser.add_argument("output", nargs="?", default="RELEASE_BODY.md")
     parser.add_argument("--build-info-dir", default=None, help="包含 build-info-*.json 的目录")
+    parser.add_argument("--zram", nargs="?", const=True, default=False,
+                        help="本次构建启用 ZRAM(LZ4KD)")
+    parser.add_argument("--bbr", nargs="?", const=True, default=False,
+                        help="本次构建启用 BBR")
+    parser.add_argument("--susfs", nargs="?", const=True, default=True,
+                        help="本次构建启用 SUSFS")
+    parser.add_argument("--kpm", nargs="?", const=True, default=True,
+                        help="本次构建启用 KPM")
     args = parser.parse_args()
 
-    ReleaseGenerator(args.build_info_dir).save_body(args.output)
+    ReleaseGenerator(
+        args.build_info_dir,
+        use_zram=_bool_arg(args.zram),
+        set_default_bbr=_bool_arg(args.bbr),
+        use_susfs=_bool_arg(args.susfs),
+        use_kpm=_bool_arg(args.kpm),
+    ).save_body(args.output)
     return 0
 
 

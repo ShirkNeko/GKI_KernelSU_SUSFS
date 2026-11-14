@@ -10,12 +10,49 @@ import json
 import os
 import ssl
 import sys
+import urllib.error
 import urllib.request
 import uuid
+
+# Telegram 单条消息上限 4096 个 UTF-16 字符，parse_mode 的标签也计算在内。
+MAX_MESSAGE_LENGTH = 3800
+MAX_HASH_ENTRIES = 8
 
 
 def as_bool(value) -> bool:
     return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _escape_html(text: str) -> str:
+    """parse_mode=HTML 下正文必须转义，否则 & 或 < 会让 Telegram 返回 400。"""
+    return (
+        str(text)
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+    )
+
+
+def _truncate(message: str, limit: int = MAX_MESSAGE_LENGTH) -> str:
+    if len(message) <= limit:
+        return message
+    suffix = "\n…（内容过长，已截断）"
+    cut = message[: limit - len(suffix)]
+    # 不要切断 HTML 标签，否则 Telegram 会直接 400
+    if cut.rfind("<") > cut.rfind(">"):
+        cut = cut[: cut.rfind("<")]
+    # 截断可能丢掉闭合标签，补齐后再发
+    for tag in ("code", "b", "i"):
+        if cut.count(f"<{tag}") > cut.count(f"</{tag}>"):
+            cut += f"</{tag}>"
+    return cut + suffix
+
+
+def _strip_html(text: str) -> str:
+    import html
+    import re
+
+    return html.unescape(re.sub(r"<[^>]+>", "", text))
 
 
 class TelegramNotifier:
@@ -33,6 +70,13 @@ class TelegramNotifier:
         try:
             with urllib.request.urlopen(request, context=self.ssl_ctx, timeout=30) as response:
                 result = json.loads(response.read())
+        except urllib.error.HTTPError as e:
+            try:
+                detail = e.read().decode("utf-8", "replace")
+            except Exception:
+                detail = ""
+            print(f"请求失败: HTTP {e.code} {detail}".strip())
+            return False
         except Exception as e:
             print(f"请求失败: {e}")
             return False
@@ -48,14 +92,31 @@ class TelegramNotifier:
             print("错误: 缺少 TELEGRAM_BOT_TOKEN 或 TELEGRAM_CHAT_ID")
             return False
 
+        text = _truncate(message)
         payload = {
             "chat_id": self.chat_id,
-            "text": message,
-            "parse_mode": parse_mode,
+            "text": text,
             "disable_web_page_preview": disable_web_page_preview,
         }
+        if parse_mode:
+            payload["parse_mode"] = parse_mode
         if self.thread_id:
             payload["message_thread_id"] = self.thread_id
+
+        if self._post(
+            "sendMessage",
+            json.dumps(payload).encode("utf-8"),
+            "application/json",
+        ):
+            return True
+
+        if not parse_mode:
+            return False
+
+        # 解析失败时退回纯文本，保证通知仍然能发出去
+        print("HTML 解析失败，改用纯文本重试")
+        payload.pop("parse_mode", None)
+        payload["text"] = _truncate(_strip_html(text))
         return self._post(
             "sendMessage",
             json.dumps(payload).encode("utf-8"),
@@ -154,11 +215,13 @@ def build_single_notify_message(android_version: str, kernel_version: str,
     files = parse_sha256sums(hashes_file)
     if files:
         message += "\n\n<b>📋 文件校验 (SHA256):</b>"
-        for file_info in files:
+        for file_info in files[:MAX_HASH_ENTRIES]:
             message += (
-                f"\n<code>{os.path.basename(file_info['filename'])}</code>"
+                f"\n<code>{_escape_html(os.path.basename(file_info['filename']))}</code>"
                 f"\n<code>{file_info['hash']}</code>"
             )
+        if len(files) > MAX_HASH_ENTRIES:
+            message += f"\n… 共 {len(files)} 个文件，完整校验值见 SHA256SUMS.txt"
     return message
 
 
@@ -184,19 +247,24 @@ def build_release_notify_message(release_tag: str, release_url: str,
 ❌ 失败: {failed}/{total}"""
 
     if release_notes:
+        notes = release_notes.strip()
+        if len(notes) > 1200:
+            notes = notes[:1200].rstrip() + "\n…（完整内容见 Release 页面）"
         message += f"""
 
 📝 <b>更新内容:</b>
-{release_notes}"""
+{_escape_html(notes)}"""
 
     files = parse_sha256sums(hashes_file)
     if files:
         message += "\n\n<b>📋 文件校验 (SHA256):</b>"
-        for file_info in files:
+        for file_info in files[:MAX_HASH_ENTRIES]:
             message += (
-                f"\n<code>{os.path.basename(file_info['filename'])}</code>"
+                f"\n<code>{_escape_html(os.path.basename(file_info['filename']))}</code>"
                 f"\n<code>{file_info['hash']}</code>"
             )
+        if len(files) > MAX_HASH_ENTRIES:
+            message += f"\n… 共 {len(files)} 个文件，完整校验值见 SHA256SUMS.txt"
     return message
 
 

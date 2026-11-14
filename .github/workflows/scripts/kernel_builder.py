@@ -11,6 +11,7 @@ import os
 import re
 import shlex
 import shutil
+import signal
 import subprocess
 import sys
 import time
@@ -22,10 +23,10 @@ from typing import Optional
 from config import (
     ANYKERNEL_CONFIG,
     BBG_CONFIG,
-    KERNEL_PATCHES_CONFIG,
     KPM_KPIMG_URL,
     KPM_KPTOOLS_URL,
     KPM_PATCH_SDK_VERSION,
+    KPM_SUPPORTED_KERNELS,
     KSU_REPO_CONFIG,
     LEGACY_FIXES,
     OP8E_PATCH_URL,
@@ -56,26 +57,104 @@ class BuildResult:
 
 
 class ShellCommand:
+    _active: Optional[subprocess.Popen] = None
+    _signal_handlers_ready = False
+
     def __init__(self, cwd: Optional[str] = None, env: Optional[dict] = None):
         self.cwd = str(cwd) if cwd else None
         self.env = env or os.environ.copy()
 
-    def run(self, cmd: str, cwd: Optional[str] = None, check: bool = True,
-            capture_output: bool = False, timeout: Optional[int] = None) -> subprocess.CompletedProcess:
-        logger.info("$ %s", cmd)
+    @staticmethod
+    def _kill_group(proc: subprocess.Popen) -> None:
+        """杀掉命令所在的整个进程组。
+
+        命令都通过 shell=True 启动，只 kill 掉 /bin/sh 的话 repo sync、git、
+        make 这些真正下载/编译的子进程会变成孤儿继续跑。
+        """
+        pgid = None
         try:
-            result = subprocess.run(
-                cmd,
-                shell=True,
-                cwd=str(cwd) if cwd else self.cwd,
-                env=self.env,
-                capture_output=capture_output,
-                text=True,
-                timeout=timeout,
-            )
+            pgid = os.getpgid(proc.pid)
+        except OSError:
+            pass
+        # 只杀独立的进程组；pgid <= 1 或与自身同组时退回单进程 kill，
+        # 避免误杀构建脚本自己。
+        if pgid is not None and pgid > 1 and pgid != os.getpgid(0):
+            try:
+                os.killpg(pgid, signal.SIGKILL)
+                return
+            except OSError:
+                pass
+        try:
+            proc.kill()
+        except ProcessLookupError:
+            pass
+
+    @classmethod
+    def _install_signal_handlers(cls) -> None:
+        """收到 TERM/HUP 时先清掉正在跑的命令组，避免 repo 在后台继续下载。"""
+        if cls._signal_handlers_ready:
+            return
+
+        def _cleanup(signum, _frame):
+            proc = cls._active
+            if proc is not None and proc.poll() is None:
+                cls._kill_group(proc)
+            raise SystemExit(128 + signum)
+
+        for sig in (signal.SIGTERM, signal.SIGHUP):
+            try:
+                signal.signal(sig, _cleanup)
+            except (ValueError, OSError):
+                pass
+        cls._signal_handlers_ready = True
+
+    @classmethod
+    def _start(cls, *args, **kwargs) -> subprocess.Popen:
+        """每个命令单独一个会话/进程组，退出时才能整组清理。"""
+        cls._install_signal_handlers()
+        proc = subprocess.Popen(*args, start_new_session=True, **kwargs)
+        cls._active = proc
+        return proc
+
+    @classmethod
+    def _release(cls, proc: subprocess.Popen) -> None:
+        if cls._active is proc:
+            cls._active = None
+
+    def run(self, cmd: str, cwd: Optional[str] = None, check: bool = True,
+            capture_output: bool = False, timeout: Optional[int] = None,
+            log_file: Optional[Path] = None) -> subprocess.CompletedProcess:
+        logger.info("$ %s", cmd)
+        if log_file is not None and not capture_output:
+            return self._run_logged(cmd, cwd, check, timeout, Path(log_file))
+
+        proc = self._start(
+            cmd,
+            shell=True,
+            cwd=str(cwd) if cwd else self.cwd,
+            env=self.env,
+            stdout=subprocess.PIPE if capture_output else None,
+            stderr=subprocess.PIPE if capture_output else None,
+            text=True,
+        )
+        try:
+            stdout, stderr = proc.communicate(timeout=timeout)
         except subprocess.TimeoutExpired:
+            self._kill_group(proc)
+            proc.wait()
             logger.error("命令超时: %s", cmd)
             raise
+        except BaseException:
+            self._kill_group(proc)
+            try:
+                proc.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                pass
+            raise
+        finally:
+            self._release(proc)
+
+        result = subprocess.CompletedProcess(cmd, proc.returncode, stdout, stderr)
 
         if check and result.returncode != 0:
             logger.error("命令失败 (exit %s): %s", result.returncode, cmd)
@@ -89,26 +168,82 @@ class ShellCommand:
             )
         return result
 
+    def _run_logged(self, cmd: str, cwd: Optional[str], check: bool,
+                    timeout: Optional[int], log_file: Path) -> subprocess.CompletedProcess:
+        """运行命令并把 stdout/stderr 同时写到控制台和日志文件。"""
+        log_file.parent.mkdir(parents=True, exist_ok=True)
+        with open(log_file, "a", encoding="utf-8", errors="replace") as log:
+            stamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            log.write(f"\n===== {stamp} =====\n$ {cmd}\n")
+            log.flush()
+
+            proc = self._start(
+                cmd,
+                shell=True,
+                cwd=str(cwd) if cwd else self.cwd,
+                env=self.env,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1,
+            )
+            try:
+                if proc.stdout is not None:
+                    for line in proc.stdout:
+                        sys.stdout.write(line)
+                        sys.stdout.flush()
+                        log.write(line)
+                        log.flush()
+                returncode = proc.wait(timeout=timeout)
+            except subprocess.TimeoutExpired:
+                self._kill_group(proc)
+                proc.wait()
+                log.write(f"[timeout] {cmd}\n")
+                log.flush()
+                logger.error("命令超时: %s", cmd)
+                raise
+            except BaseException:
+                self._kill_group(proc)
+                proc.wait()
+                raise
+            finally:
+                self._release(proc)
+
+        result = subprocess.CompletedProcess(cmd, returncode)
+        if check and returncode != 0:
+            logger.error("命令失败 (exit %s): %s", returncode, cmd)
+            raise subprocess.CalledProcessError(returncode, cmd)
+        return result
+
     def output(self, cmd: str, cwd: Optional[str] = None) -> str:
         result = self.run(cmd, cwd=cwd, check=False, capture_output=True)
         return result.stdout.strip() if result.returncode == 0 else ""
 
 
 class KernelBuilder:
-    KERNEL_CONFIG_TEMPLATE = """
+    # 基础配置按功能拆开，只把开启的选项写进 gki_defconfig
+    KSU_CONFIG = """
 # === KernelSU Config ===
 CONFIG_KSU=y
-CONFIG_KPM=y
+"""
 
+    KPM_CONFIG = """CONFIG_KPM=y
+"""
+
+    TMPFS_CONFIG = """
 # === TMPFS Config ===
 CONFIG_TMPFS_XATTR=y
 CONFIG_TMPFS_POSIX_ACL=y
+"""
 
+    NETWORK_CONFIG = """
 # === Network Config ===
 CONFIG_IP_NF_TARGET_TTL=y
 CONFIG_IP6_NF_TARGET_HL=y
 CONFIG_IP6_NF_MATCH_HL=y
+"""
 
+    BBR_CONFIG = """
 # === BBR Config ===
 CONFIG_TCP_CONG_ADVANCED=y
 CONFIG_TCP_CONG_BBR=y
@@ -116,11 +251,12 @@ CONFIG_NET_SCH_FQ=y
 CONFIG_TCP_CONG_BIC=n
 CONFIG_TCP_CONG_WESTWOOD=n
 CONFIG_TCP_CONG_HTCP=n
+"""
 
+    SUSFS_CONFIG = """
 # === SUSFS Config ===
 CONFIG_KSU_SUSFS=y
 CONFIG_KSU_SUSFS_INLINE_HOOK=y
-CONFIG_KSU_SUSFS_SUS_PATH=y
 CONFIG_KSU_SUSFS_SUS_MOUNT=y
 CONFIG_KSU_SUSFS_SUS_KSTAT=y
 CONFIG_KSU_SUSFS_SPOOF_UNAME=y
@@ -132,7 +268,7 @@ CONFIG_KSU_SUSFS_SUS_MAP=y
 CONFIG_KSU_SUSFS_PRIORITY_UID_FILTER=y
 """
 
-    ZRAM_CONFIG_5_10 = "CONFIG_ZSMALLOC=y\nCONFIG_ZRAM=y\nCONFIG_MODULE_SIG=n\nCONFIG_CRYPTO_LZO=y\nCONFIG_ZRAM_DEF_COMP_LZ4KD=y\n"
+    ZRAM_CONFIG_5_10 = "CONFIG_ZSMALLOC=y\nCONFIG_ZRAM=y\nCONFIG_CRYPTO_LZO=y\nCONFIG_ZRAM_DEF_COMP_LZ4KD=y\n"
     ZRAM_CONFIG_COMMON = "CONFIG_CRYPTO_LZ4HC=y\nCONFIG_CRYPTO_LZ4K=y\nCONFIG_CRYPTO_LZ4KD=y\nCONFIG_CRYPTO_842=y\nCONFIG_CRYPTO_LZ4K_OPLUS=y\nCONFIG_ZRAM_WRITEBACK=y\n"
 
     def __init__(self, config: BuildConfig, workspace: str):
@@ -147,7 +283,6 @@ CONFIG_KSU_SUSFS_PRIORITY_UID_FILTER=y
         self.susfs_dir = self.workspace / "susfs4ksu"
         self.sukisu_patch_dir = self.workspace / "SukiSU_patch"
         self.anykernel_dir = self.workspace / "AnyKernel3"
-        self.kernel_patches_dir = self.workspace / "kernel_patches"
         self.toolchain_dir = self.workspace / "toolchain"
         self.mkbootimg_dir = self.workspace / "mkbootimg"
         self.repo_path: Optional[Path] = None
@@ -166,10 +301,21 @@ CONFIG_KSU_SUSFS_PRIORITY_UID_FILTER=y
         self.env["CCACHE_COMPILERCHECK"] = "%compiler% -dumpmachine; %compiler% -dumpversion"
         self.env["CCACHE_NOHASHDIR"] = "true"
         self.env["CCACHE_HARDLINK"] = "true"
+        # 命令在独立会话里跑，不能让 git 等终端输入/分页器
+        self.env["GIT_TERMINAL_PROMPT"] = "0"
+        self.env["GIT_PAGER"] = "cat"
+        self.env["PAGER"] = "cat"
         self.shell.env = self.env
 
-    def _run(self, cmd: str, cwd: Optional[Path] = None, **kwargs) -> subprocess.CompletedProcess:
-        return self.shell.run(cmd, cwd=cwd, **kwargs)
+    def _run(self, cmd: str, cwd: Optional[Path] = None,
+             log_file: Optional[Path] = None, **kwargs) -> subprocess.CompletedProcess:
+        return self.shell.run(cmd, cwd=cwd, log_file=log_file, **kwargs)
+
+    def _build_log_path(self) -> Path:
+        """构建日志放在内核源码根目录（common），common 尚未同步时退回工作目录。"""
+        common_dir = self.work_dir / "common"
+        base = common_dir if common_dir.is_dir() else self.work_dir
+        return base / f"build-{self.config.config_name}.log"
 
     def _git_output(self, args: list, cwd: Path) -> str:
         return self.shell.output("git " + " ".join(q(a) for a in args), cwd=cwd)
@@ -212,7 +358,7 @@ CONFIG_KSU_SUSFS_PRIORITY_UID_FILTER=y
             return False
 
         probe = self._run(
-            f"patch -p1 -F{fuzz} --dry-run -i {q(patch_file)}",
+            f"patch -p1 -F{fuzz} --batch --dry-run -i {q(patch_file)}",
             cwd=cwd,
             check=False,
             capture_output=True,
@@ -224,7 +370,7 @@ CONFIG_KSU_SUSFS_PRIORITY_UID_FILTER=y
             logger.warning("补丁无法应用，跳过: %s\n%s", patch_file.name, detail[-2000:])
             return False
 
-        self._run(f"patch -p1 -F{fuzz} -i {q(patch_file)}", cwd=cwd)
+        self._run(f"patch -p1 -F{fuzz} --batch -i {q(patch_file)}", cwd=cwd)
         logger.info("补丁已应用: %s", patch_file.name)
         return True
 
@@ -232,9 +378,12 @@ CONFIG_KSU_SUSFS_PRIORITY_UID_FILTER=y
     # 仓库与工具链
     # ------------------------------------------------------------------
 
-    def clone_repositories(self):
-        logger.info("=== 开始克隆仓库 ===")
-        if self.config.kernel_version == "6.18":
+    def clone_patch_repositories(self):
+        """只拉取打补丁需要的仓库（SUSFS / SukiSU_patch）。"""
+        logger.info("=== 开始克隆补丁仓库 ===")
+        if not self.config.use_susfs:
+            logger.info("未启用 SUSFS，跳过 SUSFS 仓库")
+        elif self.config.kernel_version == "6.18":
             self._materialise_susfs_618()
         else:
             url, branch = self._susfs_repo()
@@ -242,14 +391,25 @@ CONFIG_KSU_SUSFS_PRIORITY_UID_FILTER=y
 
         repos = [
             ("SukiSU Patch", self.sukisu_patch_dir, SUKISU_PATCH_REPO_CONFIG["repo_url"], None),
-            ("AnyKernel3", self.anykernel_dir, ANYKERNEL_CONFIG["repo_url"], ANYKERNEL_CONFIG["branch"]),
-            ("Kernel Patches", self.kernel_patches_dir, KERNEL_PATCHES_CONFIG["repo_url"], None),
         ]
         for name, dest, url, branch in repos:
             self._clone_repo(name, dest, url, branch)
 
-        self._apply_susfs_commit()
+        if self.config.use_susfs:
+            self._apply_susfs_commit()
+        logger.info("=== 补丁仓库克隆完成 ===")
+
+    def clone_repositories(self):
+        logger.info("=== 开始克隆仓库 ===")
+        self.clone_patch_repositories()
+        self.clone_anykernel()
         logger.info("=== 仓库克隆完成 ===")
+
+    def clone_anykernel(self):
+        self._clone_repo(
+            "AnyKernel3", self.anykernel_dir,
+            ANYKERNEL_CONFIG["repo_url"], ANYKERNEL_CONFIG["branch"],
+        )
 
     def _susfs_repo(self) -> tuple:
         if self.config.kernel_version == "6.12":
@@ -258,7 +418,7 @@ CONFIG_KSU_SUSFS_PRIORITY_UID_FILTER=y
 
     def _clone_repo(self, name: str, dest: Path, url: str, branch: Optional[str]):
         if dest.exists():
-            logger.info("%s 已存在，跳过", name)
+            self._sync_repo(name, dest, url, branch)
             return
         logger.info("克隆 %s...", name)
         cmd = f"git clone {q(url)}"
@@ -266,6 +426,67 @@ CONFIG_KSU_SUSFS_PRIORITY_UID_FILTER=y
             cmd += f" -b {q(branch)}"
         cmd += f" {q(dest)}"
         self._run(cmd, cwd=self.workspace)
+
+    def _sync_repo(self, name: str, dest: Path, url: str, branch: Optional[str],
+                   clean: bool = True):
+        """复用已有克隆时强制同步远端/分支。
+
+        工作目录是长期复用的，旧缓存可能来自别的内核线、别的远端，或者被
+        本地修改弄脏。这里直接 fetch + `checkout -f -B` + `clean -fdx`，
+        效果等同删除后重新 clone，但不用整仓重新下载。
+        """
+        if not (dest / ".git").exists():
+            logger.info("%s 已存在但不是 git 仓库，跳过同步", name)
+            return
+
+        origin = self._git_output(["remote", "get-url", "origin"], dest)
+        if url and origin != url:
+            logger.info("%s origin 切换: %s -> %s", name, origin or "未知", url)
+            self._run(f"git remote set-url origin {q(url)}", cwd=dest)
+
+        fetched = self._run(
+            "git fetch origin --prune", cwd=dest, check=False,
+            capture_output=True, timeout=600,
+        )
+
+        if not branch:
+            upstream = self._git_output(
+                ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"], dest
+            )
+            if not upstream:
+                logger.warning("%s 没有跟踪分支，保留当前状态", name)
+                return
+            self._reset_repo_tree(dest, upstream, clean)
+            logger.info("%s 已同步: %s", name, upstream)
+            return
+
+        target = f"origin/{branch}"
+        if not self._git_output(["rev-parse", "--verify", target], dest):
+            detail = ((fetched.stdout or "") + (fetched.stderr or "")).strip()
+            raise RuntimeError(
+                f"{name} 远端没有分支 {branch}（origin: {url}）"
+                + (f": {detail[-500:]}" if detail else "")
+            )
+
+        current = self._git_output(["rev-parse", "--abbrev-ref", "HEAD"], dest)
+        if current != branch:
+            logger.info("%s 切换分支: %s -> %s", name, current or "未知", branch)
+        # checkout -f -B 本身就会把工作树重置到目标；不要再补一次
+        # reset --hard（在有些 WSL/磁盘上会卡住，且完全是多余操作）。
+        switched = self._run(
+            f"git checkout -f -B {q(branch)} {q(target)}",
+            cwd=dest, check=False, timeout=600,
+        )
+        if switched.returncode != 0:
+            raise RuntimeError(f"{name} 切换到分支 {branch} 失败: {dest}")
+        if clean:
+            self._run("git clean -fdx", cwd=dest, check=False, timeout=600)
+        logger.info("%s 已同步到 %s", name, target)
+
+    def _reset_repo_tree(self, dest: Path, target: str, clean: bool) -> None:
+        self._run(f"git reset --hard {q(target)}", cwd=dest, check=False, timeout=600)
+        if clean:
+            self._run("git clean -fdx", cwd=dest, check=False, timeout=600)
 
     def _materialise_susfs_618(self):
         """6.18 没有上游 SUSFS 分支，使用随仓库内置的 6.12 -> 6.18 移植。"""
@@ -302,11 +523,14 @@ CONFIG_KSU_SUSFS_PRIORITY_UID_FILTER=y
             return
 
         ref = self.config.susfs_commit
-        self._run("git fetch origin --tags --prune", cwd=self.susfs_dir, check=False)
+        self._run(
+            "git fetch origin --tags --prune",
+            cwd=self.susfs_dir, check=False, timeout=600,
+        )
         if ref.startswith("HEAD~"):
-            self._run(f"git reset --hard {q(ref)}", cwd=self.susfs_dir)
+            self._run(f"git reset --hard {q(ref)}", cwd=self.susfs_dir, timeout=600)
         else:
-            self._run(f"git checkout {q(ref)}", cwd=self.susfs_dir)
+            self._run(f"git checkout {q(ref)}", cwd=self.susfs_dir, timeout=600)
         commit = self._git_output(["rev-parse", "--short=12", "HEAD"], self.susfs_dir)
         logger.info("SUSFS 已切换到 %s (%s)", ref, commit)
 
@@ -344,10 +568,128 @@ CONFIG_KSU_SUSFS_PRIORITY_UID_FILTER=y
         self.env["REPO"] = str(self.repo_path)
         self.shell.env = self.env
 
+    def _reset_kernel_tree(self):
+        """复用工作目录时清掉上次构建的补丁/配置残留，避免反向打补丁。"""
+        common_dir = self.work_dir / "common"
+        if not (common_dir / ".git").exists():
+            return
+
+        status = self._run(
+            "git status --porcelain",
+            cwd=common_dir,
+            check=False,
+            capture_output=True,
+        )
+        dirty = [
+            line for line in (status.stdout or "").splitlines()
+            if line.strip()
+            and not (line.startswith("??") and line.rstrip().endswith(".log"))
+        ]
+        if status.returncode == 0 and not dirty:
+            logger.info("内核树干净，跳过重置")
+            return
+
+        logger.info("=== 清理上次构建残留（git reset --hard + git clean -fdx） ===")
+        self._run("git reset --hard HEAD", cwd=common_dir)
+        # 保留内核源码根目录下的构建日志
+        self._run("git clean -fdx -e '*.log'", cwd=common_dir)
+
+    def _clean_previous_outputs(self):
+        """构建前清掉上一次的 out 目录和打包产物。
+
+        复用工作目录时，旧 Image/boot.img/AnyKernel3.zip 会被误当成本次
+        结果；out 目录也可能残留上一轮的构建树。
+        """
+        for name in ("out", "bootimgs"):
+            path = self.work_dir / name
+            if path.exists():
+                logger.info("清理上次构建输出: %s", path)
+                shutil.rmtree(path, ignore_errors=True)
+
+        patterns = (
+            "Image", "Image.gz", "Image.lz4",
+            "*-boot.img", "*-boot-gz.img", "*-boot-lz4.img",
+            "*-AnyKernel3*.zip",
+            "build-info-*.json",
+        )
+        removed = []
+        for pattern in patterns:
+            for path in self.work_dir.glob(pattern):
+                if not path.is_file():
+                    continue
+                try:
+                    path.unlink()
+                    removed.append(path.name)
+                except OSError as exc:
+                    logger.warning("无法删除旧产物 %s: %s", path, exc)
+        if removed:
+            logger.info("已清理旧打包产物: %s", ", ".join(sorted(removed)))
+
+    def _kill_stale_downloads(self):
+        """结束上次中断遗留、仍在后台下载的 repo/git 进程。
+
+        repo sync 带 -j 并发下载，主进程被杀后 git 子进程可能留在后台继续
+        下载；缓存仓库里的孤儿 git 还会占着锁。只清理构建目录内的进程，
+        避免误杀其他任务。
+        """
+        proc_root = Path("/proc")
+        if not proc_root.is_dir():
+            return
+
+        roots = [
+            str(self.work_dir),
+            str(self.susfs_dir),
+            str(self.sukisu_patch_dir),
+            str(self.anykernel_dir),
+            str(self.workspace / "kpm-tools"),
+        ]
+
+        def inside(path: str) -> bool:
+            return any(path == root or path.startswith(root + os.sep) for root in roots)
+
+        killed = []
+        for entry in proc_root.iterdir():
+            if not entry.name.isdigit():
+                continue
+            pid = int(entry.name)
+            if pid == os.getpid():
+                continue
+            try:
+                cwd = os.readlink(entry / "cwd")
+            except OSError:
+                continue
+            if not inside(cwd):
+                continue
+            try:
+                cmdline = (entry / "cmdline").read_bytes().replace(b"\x00", b" ").decode(
+                    "utf-8", "replace"
+                )
+            except OSError:
+                continue
+            if "repo" not in cmdline and "git" not in cmdline:
+                continue
+            try:
+                pgid = os.getpgid(pid)
+            except OSError:
+                continue
+            try:
+                if pgid > 1 and pgid != os.getpgid(0):
+                    os.killpg(pgid, signal.SIGKILL)
+                else:
+                    os.kill(pid, signal.SIGKILL)
+            except OSError:
+                continue
+            killed.append(pid)
+
+        if killed:
+            logger.info("已清理上次残留的下载进程: %s", ", ".join(str(p) for p in killed))
+
     def init_and_sync_kernel(self):
         logger.info("=== 初始化和同步内核源代码 ===")
         if not self.repo_path:
             raise RuntimeError("repo 工具尚未安装")
+
+        self._reset_kernel_tree()
 
         formatted_branch = self.config.formatted_branch
         self._run(
@@ -356,33 +698,111 @@ CONFIG_KSU_SUSFS_PRIORITY_UID_FILTER=y
             cwd=self.work_dir,
         )
 
-        remote = subprocess.run(
-            ["git", "ls-remote", "https://android.googlesource.com/kernel/common", formatted_branch],
-            capture_output=True,
-            text=True,
-        ).stdout.strip()
+        common_revision = self._pin_archived_common_branch(formatted_branch)
 
-        if not remote:
-            logger.warning("远端不存在分支 %s，repo sync 可能失败", formatted_branch)
-
-        if "deprecated" in remote:
-            manifest_path = self.work_dir / ".repo/manifests/default.xml"
-            content = self._read(manifest_path)
-            content = content.replace(f'"{formatted_branch}"', f'"deprecated/{formatted_branch}"')
-            self._write(manifest_path, content)
-
-        logger.info("同步内核源代码...")
-        self._run(
-            f"{q(self.repo_path)} --trace sync -c -j$(nproc --all) --no-tags --fail-fast",
-            cwd=self.work_dir,
+        sync_cmd = (
+            f"{q(self.repo_path)} --trace sync -c -j$(nproc --all) "
+            "--no-tags --fail-fast"
         )
+        logger.info("同步内核源代码...")
+        attempts = 3
+        for attempt in range(1, attempts + 1):
+            try:
+                self._run(sync_cmd, cwd=self.work_dir)
+                break
+            except subprocess.CalledProcessError:
+                if attempt >= attempts:
+                    raise
+                logger.warning(
+                    "repo sync 失败（第 %d/%d 次），清理残留进程后重试",
+                    attempt,
+                    attempts,
+                )
+                self._kill_stale_downloads()
 
         common_dir = self.work_dir / "common"
         if not common_dir.exists():
             raise RuntimeError("repo sync 失败，common 目录不存在")
 
-        self._apply_legacy_fixes(remote)
+        self._apply_legacy_fixes(common_revision)
         logger.info("=== 内核源代码同步完成 ===")
+
+    COMMON_REPO_URL = "https://android.googlesource.com/kernel/common"
+
+    def _remote_refs(self, pattern: str, heads: bool) -> Optional[str]:
+        kind = "--heads" if heads else "--tags"
+        result = self.shell.run(
+            f"git ls-remote {kind} {q(self.COMMON_REPO_URL)} {q(pattern)}",
+            check=False,
+            capture_output=True,
+        )
+        if result.returncode != 0:
+            return None
+        return (result.stdout or "").strip()
+
+    def _resolve_common_revision(self, branch: str) -> Optional[str]:
+        """解析 kernel/common 上仍然可用的 revision。
+
+        Google 会把过期的月份分支改名成 deprecated/<branch>，个别分支
+        只留下 <branch>_rN 标签。直接按 manifest 里的分支名 fetch 会失败：
+        “error: Cannot fetch kernel/common from ...”。
+        """
+        direct = self._remote_refs(f"refs/heads/{branch}", True)
+        if direct is None:
+            logger.warning("无法查询 kernel/common（网络异常），先按 manifest 分支继续")
+            return branch
+        if direct:
+            return branch
+        if self._remote_refs(f"refs/heads/deprecated/{branch}", True):
+            return f"deprecated/{branch}"
+
+        refs = self._remote_refs(f"refs/tags/{branch}_r*", False) or ""
+        names = []
+        for line in refs.splitlines():
+            _, _, ref = line.partition("\t")
+            if ref.startswith("refs/tags/") and not ref.endswith("^{}"):
+                names.append(ref[len("refs/tags/"):])
+        if not names:
+            return None
+        # r1 是该月份分支的首个发布，和 manifest 分支指向的版本最接近
+        first = f"{branch}_r1"
+        if first in names:
+            return f"refs/tags/{first}"
+
+        def release_no(name: str) -> int:
+            match = re.search(r"_r(\d+)$", name)
+            return int(match.group(1)) if match else 1 << 30
+
+        return f"refs/tags/{min(names, key=release_no)}"
+
+    def _pin_archived_common_branch(self, branch: str) -> str:
+        """必要时用 local manifest 覆盖 kernel/common 的 revision。"""
+        revision = self._resolve_common_revision(branch)
+        if revision is None:
+            raise RuntimeError(
+                f"kernel/common 上找不到 {branch}（deprecated/ 与 {branch}_r* 标签均不存在），"
+                "该内核版本已被上游移除"
+            )
+
+        override = self.work_dir / ".repo/local_manifests/common-revision.xml"
+        if revision == branch:
+            if override.exists():
+                override.unlink()
+            return revision
+
+        override.parent.mkdir(parents=True, exist_ok=True)
+        self._write(
+            override,
+            '<?xml version="1.0" encoding="UTF-8"?>\n'
+            "<manifest>\n"
+            '  <remove-project name="kernel/common" />\n'
+            f'  <project path="common" name="kernel/common" revision="{revision}">\n'
+            '    <linkfile src=".bazelignore" dest=".bazelignore" />\n'
+            "  </project>\n"
+            "</manifest>\n",
+        )
+        logger.info("kernel/common 使用 %s（manifest 分支 %s 已归档）", revision, branch)
+        return revision
 
     def _apply_legacy_fixes(self, remote_branch: str = ""):
         av, kv = self.config.android_version, self.config.kernel_version
@@ -401,7 +821,11 @@ CONFIG_KSU_SUSFS_PRIORITY_UID_FILTER=y
                 self._apply_patch(fix, common_dir, required=False)
 
     def apply_toolchain_fixes(self):
-        """6.12/6.18 在新 runner 的 glibc >= 2.38 下需要补 resolve_btfids 的 CFLAGS。"""
+        """构建前的源码兼容修复（kallsyms / resolve_btfids）。"""
+        self._fix_kallsyms_on_each_symbol()
+        self._fix_resolve_btfids_fatal_warnings()
+
+        # 6.12/6.18 在新 runner 的 glibc >= 2.38 下需要补 resolve_btfids 的 CFLAGS。
         if self.config.kernel_version not in ("6.12", "6.18"):
             return
         makefile = self.work_dir / "common/tools/bpf/resolve_btfids/Makefile"
@@ -416,6 +840,86 @@ CONFIG_KSU_SUSFS_PRIORITY_UID_FILTER=y
         if old in content and "EXTRA_CFLAGS" not in content:
             logger.info("应用 resolve_btfids EXTRA_CFLAGS 修复 (glibc >= 2.38)")
             self._write(makefile, content.replace(old, new))
+
+    def _fix_resolve_btfids_fatal_warnings(self):
+        """去掉 link-vmlinux.sh 传给 resolve_btfids 的 --fatal_warnings。
+
+        6.12+ 在 CONFIG_WERROR=y 时会把 resolve_btfids 的警告升级为错误。
+        KernelSU 的 unity build 会让 BTF 里出现同名类型的多份定义，
+        resolve_btfids 打印 “WARN: multiple IDs found ... - using X” 后直接
+        失败（vmlinux.unstripped Error 255）。上游默认只是警告，这里恢复
+        默认行为：保留警告，由 resolve_btfids 选择第一个规范化类型 ID。
+        """
+        if self.config.kernel_version not in ("6.12", "6.18"):
+            return
+        script = self.work_dir / "common/scripts/link-vmlinux.sh"
+        if not script.exists():
+            return
+
+        content = self._read(script)
+        old = (
+            '\tRESOLVE_BTFIDS_ARGS=""\n'
+            "\tif is_enabled CONFIG_WERROR; then\n"
+            '\t\tRESOLVE_BTFIDS_ARGS=" --fatal_warnings "\n'
+            "\tfi\n"
+        )
+        if old in content:
+            self._write(script, content.replace(old, '\tRESOLVE_BTFIDS_ARGS=""\n'))
+            logger.info("resolve_btfids: 移除 --fatal_warnings（重复 BTF 类型降级为警告）")
+            return
+
+        if " --fatal_warnings " in content:
+            self._write(script, content.replace(" --fatal_warnings ", " "))
+            logger.info("resolve_btfids: 移除 --fatal_warnings（重复 BTF 类型降级为警告）")
+
+    def _fix_kallsyms_on_each_symbol(self):
+        """5.15 旧分支把 kallsyms_on_each_symbol 放在 CONFIG_LIVEPATCH 里。
+
+        SukiSU builtin-new 的 kallsyms_common.h 会直接调用它；GKI defconfig
+        没有开启 LIVEPATCH 时，vmlinux 链接会报 undefined symbol。
+        这里移除该函数的 CONFIG_LIVEPATCH 包裹（等价于上游后续修复），
+        对 6.1+ 已经无条件编译的内核是空操作。
+        """
+        path = self.work_dir / "common/kernel/kallsyms.c"
+        if not path.exists():
+            return
+
+        lines = self._read(path).split("\n")
+        def_idx = next(
+            (i for i, line in enumerate(lines)
+             if line.startswith("int kallsyms_on_each_symbol(")),
+            None,
+        )
+        if def_idx is None:
+            return
+
+        guard_idx = None
+        for i in range(def_idx - 1, max(def_idx - 12, -1), -1):
+            stripped = lines[i].strip()
+            if stripped.startswith("#endif") or stripped.startswith("#else"):
+                break
+            if "".join(stripped.split()) == "#ifdefCONFIG_LIVEPATCH":
+                guard_idx = i
+                break
+        if guard_idx is None:
+            return
+
+        end_idx = next(
+            (
+                i for i in range(def_idx, len(lines))
+                if lines[i].strip().startswith("#endif")
+                and "CONFIG_LIVEPATCH" in lines[i]
+            ),
+            None,
+        )
+        if end_idx is None:
+            logger.warning("kallsyms_on_each_symbol 找到 #ifdef 但没有匹配的 #endif，跳过")
+            return
+
+        del lines[end_idx]
+        del lines[guard_idx]
+        self._write(path, "\n".join(lines))
+        logger.info("kallsyms_on_each_symbol: 已移除 CONFIG_LIVEPATCH 限制（5.15 兼容）")
 
     # ------------------------------------------------------------------
     # KernelSU / SUSFS / 补丁
@@ -466,19 +970,65 @@ CONFIG_KSU_SUSFS_PRIORITY_UID_FILTER=y
 
         self._fix_kernelsu_newer_kernels(ksu_dir)
 
-    def _fix_kernelsu_newer_kernels(self, ksu_dir: Path):
-        """6.12+ 的 SUSFS 补丁 extern ksu_selinux_hide_enabled，KSU 侧需去掉 static。"""
+    def _fix_kernelsu_newer_kernels(self, ksu_dir: Optional[Path] = None):
+        """6.12+ 的 KernelSU 兼容修复。
+
+        - feature/selinux_hide.c 里的定义去掉 static；
+        - downstream/slow_avc_audit_defs.h 里的 static 声明改成 extern，
+          否则同一个编译单元里会出现 static 与 non-static 冲突；
+        - kernel/Makefile 去掉 `-g0`（改成 `-g`）：6.12 Kleaf 用
+          gendwarfksyms 生成 MODVERSIONS，需要 ksu.o 的 DWARF，缺了会报
+          “dwarf_get_units failed: no debugging information?”。
+        KernelSU 源仓库和 common/drivers/kernelsu 两边都处理（可能是副本）。
+        """
         if self.config.kernel_version not in ("6.12", "6.18"):
             return
-        path = ksu_dir / "kernel/feature/selinux_hide.c"
-        if not path.exists():
-            return
-        content = self._read(path)
-        old = "static bool ksu_selinux_hide_enabled __read_mostly = true;"
-        new = "bool ksu_selinux_hide_enabled __read_mostly = true;"
-        if old in content:
-            self._write(path, content.replace(old, new))
-            logger.info("KernelSU selinux_hide: 导出 ksu_selinux_hide_enabled")
+
+        roots = [self.work_dir / "KernelSU/kernel", self.work_dir / "common/drivers/kernelsu"]
+        if ksu_dir is not None:
+            roots.insert(0, ksu_dir / "kernel")
+
+        replacements = (
+            (
+                "feature/selinux_hide.c",
+                "static bool ksu_selinux_hide_enabled __read_mostly = true;",
+                "bool ksu_selinux_hide_enabled __read_mostly = true;",
+                "导出 ksu_selinux_hide_enabled",
+            ),
+            (
+                "downstream/slow_avc_audit_defs.h",
+                "static bool ksu_selinux_hide_enabled;",
+                "extern bool ksu_selinux_hide_enabled;",
+                "slow_avc_audit_defs.h 改为 extern 声明",
+            ),
+            (
+                "Makefile",
+                "CFLAGS_ksu.o += -g0 -fno-unwind-tables",
+                "CFLAGS_ksu.o += -g -fno-unwind-tables",
+                "去掉 -g0，gendwarfksyms 需要 DWARF 调试信息",
+            ),
+        )
+
+        seen = set()
+        for root in roots:
+            if not root.exists():
+                continue
+            for rel, old, new, desc in replacements:
+                path = root / rel
+                if not path.exists():
+                    continue
+                try:
+                    key = path.resolve()
+                except OSError:
+                    key = path
+                if key in seen:
+                    continue
+                seen.add(key)
+                content = self._read(path)
+                if old not in content:
+                    continue
+                self._write(path, content.replace(old, new))
+                logger.info("KernelSU 兼容: %s (%s)", desc, path)
 
     def add_bbg(self):
         if not self.config.use_bbg:
@@ -517,12 +1067,23 @@ CONFIG_KSU_SUSFS_PRIORITY_UID_FILTER=y
             self._write(kconfig_file, content)
 
     def apply_susfs_patches(self):
+        if not self.config.use_susfs:
+            logger.info("=== 未启用 SUSFS，跳过补丁 ===")
+            return
         logger.info("=== 应用 SUSFS 补丁 ===")
         common_dir = self.work_dir / "common"
         patch_name = self.config.get_susfs_patch_filename()
         susfs_patch = self.susfs_dir / "kernel_patches" / patch_name
         if not susfs_patch.exists():
-            raise RuntimeError(f"找不到 SUSFS 补丁: {patch_name}")
+            branch = "内置"
+            if (self.susfs_dir / ".git").exists():
+                branch = self._git_output(
+                    ["rev-parse", "--abbrev-ref", "HEAD"], self.susfs_dir
+                ) or "未知"
+            raise RuntimeError(
+                f"找不到 SUSFS 补丁: {patch_name}"
+                f"（{self.susfs_dir} 当前分支: {branch}）"
+            )
 
         self._run(f"cp {q(susfs_patch)} {q(common_dir)}/", cwd=self.work_dir)
         for src, dst in [
@@ -559,16 +1120,6 @@ CONFIG_KSU_SUSFS_PRIORITY_UID_FILTER=y
         self._run_vendor_script(
             "susfs_fdinfo_fanotify_arity.py", str(common_dir), cwd=common_dir
         )
-
-    def apply_sukisu_patches(self):
-        logger.info("=== 应用 SukiSU 补丁 ===")
-        common_dir = self.work_dir / "common"
-        hooks_patch = self.sukisu_patch_dir / "69_hide_stuff.patch"
-        if not hooks_patch.exists():
-            logger.warning("未找到 69_hide_stuff.patch，跳过")
-            return
-        self._run(f"cp {q(hooks_patch)} {q(common_dir)}/", cwd=self.work_dir)
-        self._apply_patch(common_dir / hooks_patch.name, common_dir, required=False)
 
     def apply_zram_patches(self):
         if not self.config.use_zram:
@@ -620,11 +1171,6 @@ CONFIG_KSU_SUSFS_PRIORITY_UID_FILTER=y
                 content = "\n".join(new_lines)
                 logger.info("已添加 VMA_PAD_START 宏定义")
 
-        # ===== 修复 dentry 未初始化 =====
-        if "struct dentry *dentry;" in content:
-            content = content.replace("struct dentry *dentry;", "struct dentry *dentry = NULL;")
-            logger.info("已修复 dentry 未初始化问题")
-
         self._write(task_mmu, content)
 
         fb = f"{self.config.android_version}-{self.config.kernel_version}"
@@ -656,6 +1202,42 @@ CONFIG_KSU_SUSFS_PRIORITY_UID_FILTER=y
     # 内核配置
     # ------------------------------------------------------------------
 
+    def _ksu_kconfigs(self) -> list:
+        return [
+            self.work_dir / "common/drivers/kernelsu/Kconfig",
+            self.work_dir / "KernelSU/kernel/Kconfig",
+        ]
+
+    def _ksu_supports_inline_hook(self) -> bool:
+        """builtin-new 用 KSU_SUSFS_INLINE_HOOK 选择 SUSFS 内联钩子；builtin 没有这个符号。"""
+        return any(
+            path.exists() and "config KSU_SUSFS_INLINE_HOOK" in self._read(path)
+            for path in self._ksu_kconfigs()
+        )
+
+    def _ksu_supports_branch_link_hook(self) -> bool:
+        """无 SUSFS 时用 KSU_HACK_ARM64_BRANCH_LINK 作为钩子；builtin 分支没有该符号。"""
+        return any(
+            path.exists() and "config KSU_HACK_ARM64_BRANCH_LINK" in self._read(path)
+            for path in self._ksu_kconfigs()
+        )
+
+    def _kernel_config_template(self) -> str:
+        """按本次构建开启的选项拼 gki_defconfig，未开启的功能不写入。"""
+        parts = [self.KSU_CONFIG]
+        if self.config.use_kpm:
+            parts.append(self.KPM_CONFIG)
+        parts.append(self.TMPFS_CONFIG)
+        parts.append(self.NETWORK_CONFIG)
+        if self.config.set_default_bbr:
+            parts.append(self.BBR_CONFIG)
+        if self.config.use_susfs:
+            susfs = self.SUSFS_CONFIG
+            if not self._ksu_supports_inline_hook():
+                susfs = susfs.replace("CONFIG_KSU_SUSFS_INLINE_HOOK=y\n", "")
+            parts.append(susfs)
+        return "".join(parts)
+
     def configure_kernel(self):
         logger.info("=== 配置内核 ===")
         config_file = self.work_dir / "common/arch/arm64/configs/gki_defconfig"
@@ -663,9 +1245,21 @@ CONFIG_KSU_SUSFS_PRIORITY_UID_FILTER=y
             logger.warning("配置文件不存在: %s", config_file)
             return
 
-        self._append(config_file, self.KERNEL_CONFIG_TEMPLATE)
-        sus_path = "y" if self.config.kernel_version != "6.6" else "n"
-        self._append(config_file, f"CONFIG_KSU_SUSFS_SUS_PATH={sus_path}\n")
+        self._append(config_file, self._kernel_config_template())
+        if self.config.use_susfs:
+            # 6.6 的 SUSFS 补丁对 SUS_PATH 支持不完整，保持关闭
+            sus_path = "n" if self.config.kernel_version == "6.6" else "y"
+            self._append(config_file, f"CONFIG_KSU_SUSFS_SUS_PATH={sus_path}\n")
+        else:
+            if not self._ksu_supports_branch_link_hook():
+                raise RuntimeError(
+                    "当前 SukiSU 分支没有 CONFIG_KSU_HACK_ARM64_BRANCH_LINK，"
+                    "无法在不打 SUSFS 补丁时获得 root；请使用 Dev(builtin-new) "
+                    "或 Custom 的 builtin-new 分支"
+                )
+            logger.info("无 SUSFS 构建：使用 CONFIG_KSU_HACK_ARM64_BRANCH_LINK 钩子")
+            self._append(config_file, "CONFIG_KSU_SUSFS=n\n")
+            self._append(config_file, "CONFIG_KSU_HACK_ARM64_BRANCH_LINK=y\n")
 
         if self.config.use_zram:
             self._configure_zram()
@@ -760,19 +1354,48 @@ CONFIG_KSU_SUSFS_PRIORITY_UID_FILTER=y
         if not (self.work_dir / "build/build.sh").exists():
             self._configure_kleaf_name(safe_custom_version)
 
+    def _disable_kleaf_defconfig_check(self, target: str = "kernel_aarch64"):
+        """只给指定 kernel_build 块加 check_defconfig="disabled"。
+
+        不能只看整个文件里是否存在该字符串：6.12/6.18 的 kernel_aarch64_tv
+        已经带了这个属性，旧逻辑会误判成 kernel_aarch64 已处理，最终仍会在
+        savedefconfig 校验时失败。
+        """
+        bazel_build = self.work_dir / "common/BUILD.bazel"
+        if not bazel_build.exists():
+            return
+
+        lines = self._read(bazel_build).split("\n")
+        name_re = re.compile(
+            rf'^\s*name\s*=\s*"{re.escape(target)}",?\s*$'
+        )
+        start = next(
+            (i for i, line in enumerate(lines) if name_re.match(line)),
+            None,
+        )
+        if start is None:
+            logger.warning("BUILD.bazel 未找到 target %s，跳过 check_defconfig", target)
+            return
+        end = next(
+            (
+                i for i in range(start + 1, len(lines))
+                if lines[i].strip() == ")" and not lines[i][:1].isspace()
+            ),
+            len(lines),
+        )
+        if any('check_defconfig = "disabled"' in line for line in lines[start:end]):
+            return
+
+        lines.insert(start + 1, '    check_defconfig = "disabled",')
+        self._write(bazel_build, "\n".join(lines))
+        logger.info("已禁用 %s 的 check_defconfig 校验", target)
+
     def _configure_kleaf_name(self, safe_custom_version: str):
+        self._disable_kleaf_defconfig_check()
+
         bazel_build = self.work_dir / "common/BUILD.bazel"
         if bazel_build.exists():
             content = self._read(bazel_build)
-            if 'check_defconfig = "disabled"' not in content:
-                lines = []
-                inserted = False
-                for line in content.split("\n"):
-                    lines.append(line)
-                    if not inserted and line.strip() == 'name = "kernel_aarch64",':
-                        lines.append('    check_defconfig = "disabled",')
-                        inserted = True
-                content = "\n".join(lines)
             content = "\n".join(
                 line for line in content.split("\n")
                 if '"protected_exports_list"' not in line
@@ -827,22 +1450,26 @@ CONFIG_KSU_SUSFS_PRIORITY_UID_FILTER=y
             logger.warning("配置文件不存在: %s", config_file)
             return
 
-        config_lines = [
+        config_lines = list(dict.fromkeys(
             line.strip() for line in self._read(config_file).splitlines()
             if line.strip().startswith("CONFIG_")
-        ]
+        ))
 
-        key_configs = {
-            "CONFIG_KSU": "KernelSU",
-            "CONFIG_KPM": "KPM",
-            "CONFIG_KSU_SUSFS": "SUSFS",
-            "CONFIG_BBG": "Baseband-guard",
-            "CONFIG_BBR": "BBR",
-            "CONFIG_ZRAM": "ZRAM",
-        }
+        def is_ksu(line: str) -> bool:
+            # KernelSU 区不显示 SUSFS 选项，避免和下面的 SUSFS 区重复
+            return line.startswith("CONFIG_KSU") and not line.startswith("CONFIG_KSU_SUSFS")
+
+        key_configs = (
+            ("KernelSU", is_ksu),
+            ("KPM", lambda c: c.startswith("CONFIG_KPM")),
+            ("SUSFS", lambda c: c.startswith("CONFIG_KSU_SUSFS")),
+            ("Baseband-guard", lambda c: c.startswith("CONFIG_BBG")),
+            ("BBR", lambda c: c.startswith("CONFIG_BBR")),
+            ("ZRAM", lambda c: c.startswith("CONFIG_ZRAM")),
+        )
         logger.info("关键配置状态:")
-        for prefix, name in key_configs.items():
-            found = [c for c in config_lines if c.startswith(prefix)]
+        for name, matches in key_configs:
+            found = [c for c in config_lines if matches(c)]
             logger.info("  [%s] %s", "已启用" if found else "未配置", name)
             for item in sorted(found):
                 logger.info("      -> %s", item)
@@ -864,6 +1491,9 @@ CONFIG_KSU_SUSFS_PRIORITY_UID_FILTER=y
 
     def build_kernel(self) -> bool:
         logger.info("=== 开始编译内核 ===")
+        # 补丁应用完后再确认一次，避免补丁回退或重复同步把兼容修改覆盖掉
+        self._fix_kallsyms_on_each_symbol()
+        self._fix_kernelsu_newer_kernels()
         build_config = self.work_dir / "common/build.config.gki.aarch64"
         if build_config.exists():
             content = self._read(build_config)
@@ -875,6 +1505,8 @@ CONFIG_KSU_SUSFS_PRIORITY_UID_FILTER=y
             ]
             self._write(build_config, "\n".join(lines))
 
+        build_log = self._build_log_path()
+        logger.info("构建日志: %s", build_log)
         try:
             if (self.work_dir / "build/build.sh").exists():
                 if self.config.page_size == "16k":
@@ -885,6 +1517,7 @@ CONFIG_KSU_SUSFS_PRIORITY_UID_FILTER=y
                     'build/build.sh CC="/usr/bin/ccache clang"',
                     cwd=self.work_dir,
                     check=False,
+                    log_file=build_log,
                 )
             else:
                 logger.info("使用 Bazel 构建方式...")
@@ -904,11 +1537,14 @@ CONFIG_KSU_SUSFS_PRIORITY_UID_FILTER=y
                 else:
                     target = "//common:kernel_aarch64_dist"
                     lto_flag = " --lto=thin"
+                # 追加的 gki_defconfig 片段不是 savedefconfig 规范格式，关闭校验
+                self._disable_kleaf_defconfig_check()
                 result = self._run(
                     f"tools/bazel build --disk_cache={q(disk_cache)} --config=fast"
                     f"{lto_flag}{page_flag} {target}",
                     cwd=self.work_dir,
                     check=False,
+                    log_file=build_log,
                 )
         except Exception as e:
             logger.error("编译过程出错: %s", e)
@@ -921,37 +1557,48 @@ CONFIG_KSU_SUSFS_PRIORITY_UID_FILTER=y
         return False
 
     def verify_kernel_config(self):
-        """确认 Kleaf 没有把 KSU/SUSFS 配置从最终 .config 里丢掉。"""
-        candidates = [
+        """确认最终 .config 里的关键配置没有丢失。"""
+        candidates = []
+        candidates.extend([
             self.work_dir / "bazel-bin/common/kernel_aarch64_config/out_dir/.config",
             self.work_dir / f"out/{self.config.android_version}-{self.config.kernel_version}/dist/.config",
-        ]
+            self.work_dir / f"out/{self.config.android_version}-{self.config.kernel_version}/.config",
+        ])
         config_file = next((p for p in candidates if p.exists()), None)
         if config_file is None:
             config_file = next(
                 self.work_dir.glob("bazel-bin/common/**/out_dir/.config"), None
             )
         if config_file is None:
+            config_file = next(self.work_dir.glob("out/**/.config"), None)
+        if config_file is None:
             logger.warning("未找到生成的 .config，跳过配置校验")
             return
 
         content = self._read(config_file)
-        missing = [
-            name for name in ("CONFIG_KSU=y", "CONFIG_KSU_SUSFS=y")
-            if name not in content
-        ]
+        if self.config.use_susfs:
+            required = ["CONFIG_KSU=y", "CONFIG_KSU_SUSFS=y"]
+            if self._ksu_supports_inline_hook():
+                required.append("CONFIG_KSU_SUSFS_INLINE_HOOK=y")
+        else:
+            required = ["CONFIG_KSU=y", "CONFIG_KSU_HACK_ARM64_BRANCH_LINK=y"]
+        missing = [name for name in required if name not in content]
         if missing:
             raise RuntimeError(
                 f"最终 .config 缺少 {', '.join(missing)}: {config_file}"
             )
+
+        if self.config.page_size == "4k" and "CONFIG_ARM64_4K_PAGES=y" not in content:
+            raise RuntimeError(f"4k page size 未生效: {config_file}")
+
         if self.config.page_size == "16k" and "CONFIG_ARM64_16K_PAGES=y" not in content:
             raise RuntimeError(f"16k page size 未生效: {config_file}")
-        logger.info("配置校验通过: CONFIG_KSU / CONFIG_KSU_SUSFS 均在 %s", config_file)
+        logger.info("配置校验通过: %s", config_file)
 
     def patch_kpm_image(self):
         if (
             not self.config.use_kpm
-            or self.config.kernel_version in ("6.6", "6.12", "6.18")
+            or self.config.kernel_version not in KPM_SUPPORTED_KERNELS
             or self.config.page_size == "16k"
         ):
             return
@@ -967,7 +1614,10 @@ CONFIG_KSU_SUSFS_PRIORITY_UID_FILTER=y
             return
 
         tools_dir = self.workspace / "kpm-tools"
-        tools_dir.mkdir(exist_ok=True)
+        # 每次重新拉取，避免旧版本/半截文件残留（下载本来也是每次都做）
+        if tools_dir.exists():
+            shutil.rmtree(tools_dir, ignore_errors=True)
+        tools_dir.mkdir(parents=True, exist_ok=True)
         kpimg = tools_dir / "kpimg"
         kptools = tools_dir / "kptools-linux"
         self._fetch(KPM_KPIMG_URL, kpimg)
@@ -998,7 +1648,7 @@ CONFIG_KSU_SUSFS_PRIORITY_UID_FILTER=y
         else:
             image_source = self.work_dir / "bazel-bin/common/kernel_aarch64"
 
-        for image_name in ("Image", "Image.lz4"):
+        for image_name in ("Image", "Image.lz4", "Image.gz"):
             src = image_source / image_name
             if src.exists():
                 self._run(f"cp {q(src)} {q(bootimgs_dir)}/ && cp {q(src)} {q(self.work_dir)}/", cwd=self.work_dir)
@@ -1018,13 +1668,12 @@ CONFIG_KSU_SUSFS_PRIORITY_UID_FILTER=y
             f"{self.config.os_patch_level}_{self.config.revision}.zip"
         )
         fallback_url = "https://dl.google.com/android/gki/gki-certified-boot-android12-5.10-2023-01_r1.zip"
-        probe = subprocess.run(
+        probe = self._run(
             f"curl -sL -w '%{{http_code}}' {q(gki_url)} -o /dev/null",
-            shell=True,
+            check=False,
             capture_output=True,
-            text=True,
         )
-        url = gki_url if "200" in probe.stdout else fallback_url
+        url = gki_url if "200" in (probe.stdout or "") else fallback_url
 
         self._run(f"curl -fLo gki-kernel.zip {q(url)}", cwd=bootimgs_dir)
         self._run("unzip -o gki-kernel.zip && rm gki-kernel.zip", cwd=bootimgs_dir)
@@ -1089,7 +1738,10 @@ CONFIG_KSU_SUSFS_PRIORITY_UID_FILTER=y
 
     def _write_build_info(self, artifacts: list) -> Path:
         kv = self.config.kernel_version
-        if kv == "6.18":
+        if not self.config.use_susfs:
+            susfs_source = "disabled"
+            susfs_commit = ""
+        elif kv == "6.18":
             susfs_source = "bundled-gki-android17-6.18-port"
             susfs_commit = "local-6.12-port"
         elif kv == "6.12":
@@ -1126,6 +1778,9 @@ CONFIG_KSU_SUSFS_PRIORITY_UID_FILTER=y
         logger.info("=" * 50)
 
         try:
+            # 先清掉上次中断遗留的 repo/git 进程，避免缓存仓库被占锁
+            self._kill_stale_downloads()
+            self._clean_previous_outputs()
             self.clone_repositories()
             self.clone_toolchain()
             self.setup_repo_tool()
@@ -1135,7 +1790,6 @@ CONFIG_KSU_SUSFS_PRIORITY_UID_FILTER=y
             self.add_kernelsu()
             self.add_bbg()
             self.apply_susfs_patches()
-            self.apply_sukisu_patches()
             self.apply_zram_patches()
             self.apply_task_mmu_fixes()
             self.configure_kernel()

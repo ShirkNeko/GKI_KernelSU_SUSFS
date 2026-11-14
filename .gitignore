@@ -1,0 +1,36 @@
+# Python bytecode / caches
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+
+# Build logs (written into the kernel source root by build.py)
+*.log
+build-*.log
+
+# Local build workspaces / outputs
+/out/
+/bazel-*/
+/toolchain/
+/mkbootimg/
+/git-repo/
+/KernelSU/
+/susfs4ksu/
+/SukiSU_patch/
+/AnyKernel3/
+/kernel_patches/
+/kpm-tools/
+*.zip
+*.img
+*.tar.gz
+*.tar.xz
+
+# Local preset / temporary files
+.gki-build-preset
+commit-msg.txt
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

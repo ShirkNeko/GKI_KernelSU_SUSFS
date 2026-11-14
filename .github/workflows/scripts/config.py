@@ -5,6 +5,7 @@ SUSFS 版本号在首次调用 get_susfs_version() 时才去仓库读取。
 """
 from __future__ import annotations
 
+import logging
 import re
 import ssl
 import urllib.request
@@ -12,6 +13,8 @@ from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 from typing import Optional
+
+_logger = logging.getLogger("config")
 
 
 # ---------------------------------------------------------------------------
@@ -169,6 +172,8 @@ KPM_TOOLS_BASE = (
 KPM_KPIMG_URL = f"{KPM_TOOLS_BASE}/kpimg"
 KPM_KPTOOLS_URL = f"{KPM_TOOLS_BASE}/kptools-linux"
 KPM_PATCH_SDK_VERSION = "123"
+# KPM 修补只在这些内核线上生效（6.6+ 不支持，16k 也会跳过）
+KPM_SUPPORTED_KERNELS = ("5.10", "5.15", "6.1")
 
 
 # ---------------------------------------------------------------------------
@@ -196,6 +201,7 @@ class BuildConfig:
     susfs_commit: Optional[str] = None
     use_zram: bool = False
     use_kpm: bool = True
+    use_susfs: bool = True
     use_bbg: bool = False
     support_op8e: bool = False
     set_default_bbr: bool = False
@@ -248,6 +254,12 @@ class BuildConfig:
             raise ValueError(f"无效的 SukiSU commit/ref: {self.kernelsu_commit}")
         if self.kernelsu_branch and not validate_ref(self.kernelsu_branch):
             raise ValueError(f"无效的 SukiSU 分支: {self.kernelsu_branch}")
+        if not self.use_susfs and self.kernelsu_version == KSUVersion.STABLE.value:
+            # builtin 分支没有 CONFIG_KSU_HACK_ARM64_BRANCH_LINK，无 SUSFS 时必须用 builtin-new
+            _logger.warning(
+                "未启用 SUSFS：builtin 分支没有 branch link 钩子，自动改用 Dev(builtin-new)"
+            )
+            self.kernelsu_version = KSUVersion.DEV.value
 
     def _validate_page_size(self):
         if self.page_size not in PAGE_SIZES:
@@ -296,10 +308,13 @@ class BuildConfig:
 
     @property
     def ignored_kernelsu_branch(self) -> Optional[str]:
-        """Stable / Dev 模式下填写了分支时返回该值，便于提示用户它不会生效。"""
-        if self.kernelsu_branch and self.kernelsu_version != KSUVersion.CUSTOM.value:
-            return self.kernelsu_branch
-        return None
+        """Stable / Dev 模式下填写了不会生效的分支时返回该值，用于提示。"""
+        if not self.kernelsu_branch or self.kernelsu_version == KSUVersion.CUSTOM.value:
+            return None
+        if self.kernelsu_branch == KSU_BRANCH_BY_VERSION.get(self.kernelsu_version):
+            # 与版本映射一致（build-wsl 以前会自动带上），不算被忽略
+            return None
+        return self.kernelsu_branch
 
     def get_susfs_patch_filename(self) -> str:
         return f"50_add_susfs_in_gki-{self.android_version}-{self.kernel_version}.patch"
@@ -323,6 +338,7 @@ class BuildConfig:
             "susfs_commit": self.susfs_commit,
             "use_zram": self.use_zram,
             "use_kpm": self.use_kpm,
+            "use_susfs": self.use_susfs,
             "use_bbg": self.use_bbg,
             "support_op8e": self.support_op8e,
             "set_default_bbr": self.set_default_bbr,

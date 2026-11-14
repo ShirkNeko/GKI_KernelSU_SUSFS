@@ -185,14 +185,25 @@ jobs:
       - name: Prepare artifacts
         run: |
           mkdir -p artifacts
-          find /tmp/gki-build -name "*.zip" -type f -exec cp {} artifacts/ \;
-          find /tmp/gki-build -name "*.img" -type f -exec cp {} artifacts/ \;
-          find /tmp/gki-build -name "build-info-*.json" -type f -exec cp {} artifacts/ \;
-          cd artifacts
-          find . -maxdepth 1 -type f \( -name '*.zip' -o -name '*.img' \) -printf '%P\n' \
-            | sort | xargs -r sha256sum > SHA256SUMS.txt
-          cd ..
+          BUILD_DIR="/tmp/gki-build/${{ github.event.inputs.android_version }}-${{ github.event.inputs.kernel_version }}-${{ github.event.inputs.sub_level }}"
+          if [ "${{ github.event.inputs.page_size }}" = "16k" ]; then
+            BUILD_DIR="${BUILD_DIR}-16k"
+          fi
+          if [ -d "$BUILD_DIR" ]; then
+            find "$BUILD_DIR" -maxdepth 1 -type f \
+              \( -name '*.zip' -o -name '*.img' -o -name 'build-info-*.json' -o -name 'abi-*.json' \) \
+              -exec cp -t artifacts/ -- {} +
+          fi
+          if [ -z "$(ls -A artifacts/)" ]; then
+            echo "没有找到构建产物: $BUILD_DIR"
+            exit 1
+          fi
           ls -la artifacts/
+          (
+            cd artifacts
+            find . -maxdepth 1 -type f \( -name '*.zip' -o -name '*.img' \) -print0 \
+              | sort -z | xargs -0 -r sha256sum > SHA256SUMS.txt
+          )
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v7

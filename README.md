@@ -87,6 +87,7 @@ python build.py --list-matrix
 | `--susfs-commit` | 指定 SUSFS commit (hash 或 HEAD~N) | latest |
 | `--zram` | 启用 ZRAM (LZ4KD) | False |
 | `--no-kpm` | 禁用 KPM | False |
+| `--no-susfs` | 不打 SUSFS 补丁，改用 `CONFIG_KSU_HACK_ARM64_BRANCH_LINK` 钩子（需 builtin-new 分支） | False |
 | `--bbg` | 启用 Baseband-guard | False |
 | `--op8e` | 启用 OnePlus 8E 支持 | False |
 | `--bbr` | 设置 BBR 为默认拥塞算法 | False |

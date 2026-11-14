@@ -46,8 +46,18 @@ on:
         required: true
         type: boolean
         default: true
+      use_susfs:
+        description: '启用 SUSFS（关闭后不打 SUSFS 补丁，改用 branch link 钩子）'
+        required: true
+        type: boolean
+        default: true
       BBG:
         description: '启用 Baseband-guard'
+        required: true
+        type: boolean
+        default: false
+      set_defbbr:
+        description: '设置 BBR 为默认拥塞算法'
         required: true
         type: boolean
         default: false
@@ -157,7 +167,9 @@ jobs:
           CUSTOM_VERSION: ${{ github.event.inputs.custom_version }}
           USE_ZRAM: ${{ github.event.inputs.use_zram }}
           USE_KPM: ${{ github.event.inputs.use_kpm }}
+          USE_SUSFS: ${{ github.event.inputs.use_susfs }}
           USE_BBG: ${{ github.event.inputs.BBG }}
+          SET_DEF_BBR: ${{ github.event.inputs.set_defbbr }}
           PAGE_SIZE: ${{ matrix.config.page_size }}
         run: python3 ${{ env.SCRIPTS_DIR }}/build.py --from-env
 
@@ -173,19 +185,26 @@ jobs:
         id: prepare-artifacts
         run: |
           mkdir -p artifacts
-          find /tmp/gki-build -name "*.zip" -type f -exec cp {} artifacts/ \;
-          find /tmp/gki-build -name "*.img" -type f -exec cp {} artifacts/ \;
-          find /tmp/gki-build -name "build-info-*.json" -type f -exec cp {} artifacts/ \;
+          BUILD_DIR="/tmp/gki-build/${{ matrix.config.android }}-${{ matrix.config.kernel }}-${{ matrix.config.sub_level }}"
+          if [ "${{ matrix.config.page_size }}" = "16k" ]; then
+            BUILD_DIR="${BUILD_DIR}-16k"
+          fi
+          if [ -d "$BUILD_DIR" ]; then
+            find "$BUILD_DIR" -maxdepth 1 -type f \
+              \( -name '*.zip' -o -name '*.img' -o -name 'build-info-*.json' -o -name 'abi-*.json' \) \
+              -exec cp -t artifacts/ -- {} +
+          fi
           if [ -z "$(ls -A artifacts/)" ]; then
-            echo "没有找到构建产物"
+            echo "没有找到构建产物: $BUILD_DIR"
             echo "artifacts_exist=false" >> $GITHUB_OUTPUT
           else
             echo "artifacts_exist=true" >> $GITHUB_OUTPUT
             ls -la artifacts/
-            cd artifacts
-            find . -maxdepth 1 -type f \( -name '*.zip' -o -name '*.img' \) -printf '%P\n' \
-              | sort | xargs -r sha256sum > SHA256SUMS.txt
-            cd ..
+            (
+              cd artifacts
+              find . -maxdepth 1 -type f \( -name '*.zip' -o -name '*.img' \) -print0 \
+                | sort -z | xargs -0 -r sha256sum > SHA256SUMS.txt
+            )
           fi
 
       - name: Upload artifacts
@@ -273,22 +292,26 @@ jobs:
       - name: Generate release body
         if: steps.prepare-summary.outputs.success != '0'
         run: |
-          python3 ${{ env.SCRIPTS_DIR }}/release_generator.py release-files/RELEASE_BODY.md --build-info-dir all-artifacts
+          python3 ${{ env.SCRIPTS_DIR }}/release_generator.py release-files/RELEASE_BODY.md --build-info-dir all-artifacts \
+            --zram "${{ github.event.inputs.use_zram }}" \
+            --bbr "${{ github.event.inputs.set_defbbr }}" \
+            --susfs "${{ github.event.inputs.use_susfs }}" \
+            --kpm "${{ github.event.inputs.use_kpm }}"
           echo "=== 发布内容 ==="
           cat release-files/RELEASE_BODY.md
 
-      - name: Create release
+      - name: Create release and upload assets
         if: steps.prepare-summary.outputs.success != '0'
-        uses: softprops/action-gh-release@v3
         id: create_release
-        with:
-          tag_name: ${{ needs.prepare.outputs.kernel_version }}
-          name: GKI Kernel ${{ needs.prepare.outputs.kernel_version }}
-          draft: false
-          generate_release_notes: false
-          files: |
-            release-files/*
-          body_path: release-files/RELEASE_BODY.md
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python3 ${{ env.SCRIPTS_DIR }}/upload_release.py \
+            --tag "${{ needs.prepare.outputs.kernel_version }}" \
+            --repo "${{ github.repository }}" \
+            --dir release-files \
+            --title "GKI Kernel ${{ needs.prepare.outputs.kernel_version }}" \
+            --notes-file release-files/RELEASE_BODY.md
 
       - name: Get release URL
         if: steps.prepare-summary.outputs.success != '0'

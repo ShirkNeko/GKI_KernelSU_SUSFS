@@ -70,6 +70,7 @@ def parse_args(argv=None) -> argparse.Namespace:
     parser.add_argument("--susfs-commit", default=None)
     parser.add_argument("--zram", action="store_true")
     parser.add_argument("--no-kpm", action="store_true")
+    parser.add_argument("--no-susfs", action="store_true", help="不应用 SUSFS 补丁，改用 ARM64 branch link 钩子")
     parser.add_argument("--bbg", action="store_true")
     parser.add_argument("--op8e", action="store_true")
     parser.add_argument("--bbr", action="store_true")
@@ -121,6 +122,7 @@ def args_from_env() -> argparse.Namespace:
         susfs_commit=_env("SUSFS_COMMIT"),
         zram=_env_bool("USE_ZRAM"),
         no_kpm=not _env_bool("USE_KPM", True),
+        no_susfs=not _env_bool("USE_SUSFS", True),
         bbg=_env_bool("USE_BBG"),
         op8e=_env_bool("USE_OP8E"),
         bbr=_env_bool("SET_DEF_BBR"),
@@ -154,6 +156,7 @@ def create_build_config(args: argparse.Namespace) -> BuildConfig:
         susfs_commit=args.susfs_commit,
         use_zram=args.zram,
         use_kpm=not args.no_kpm,
+        use_susfs=not args.no_susfs,
         use_bbg=args.bbg,
         support_op8e=args.op8e,
         set_default_bbr=args.bbr,
@@ -209,7 +212,9 @@ def build_single(config: BuildConfig, workspace: str, dry_run: bool = False) -> 
     if dry_run:
         logger.info(
             "[DRY RUN] 验证配置: %s (page_size=%s, SukiSU ref: %s)",
-            config.config_name, config.page_size, config.kernelsu_ref,
+            config.config_name,
+            config.page_size,
+            config.kernelsu_ref,
         )
         return BuildResult(success=True, config=config, message="配置验证通过")
 
@@ -241,6 +246,7 @@ def build_matrix(matrix_key: str, args: argparse.Namespace, workspace: str) -> l
                 susfs_commit=args.susfs_commit,
                 use_zram=args.zram,
                 use_kpm=not args.no_kpm,
+                use_susfs=not args.no_susfs,
                 use_bbg=args.bbg,
                 support_op8e=args.op8e,
                 set_default_bbr=args.bbr,
@@ -364,4 +370,8 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except KeyboardInterrupt:
+        logger.warning("构建已中断")
+        sys.exit(130)
